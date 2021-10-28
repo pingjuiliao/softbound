@@ -66,6 +66,7 @@ add_llvm_component_library(LLVMTransformUtils
   SimplifyIndVar.cpp
   SimplifyLibCalls.cpp
   SizeOpts.cpp
+  Softbound.cpp
   SplitModule.cpp
   StripNonLineTableDebugInfo.cpp
   SymbolRewriter.cpp

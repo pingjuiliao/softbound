@@ -31,7 +31,7 @@ def build_llvm() :
         os.system("""cmake -DLLVM_ENABLE_PROJECTS=clang \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DBUILD_SHARED_LIBS=Off \
-                -DLLVM_BUILD_TOOLS=Off \
+                -DLLVM_BUILD_TOOLS=On \
                 -DLLVM_BUILD_TESTS=Off \ \
                 -DLLVM_BUILD_EXAMPLES=Off \
                 -DLLVM_BUILD_DOCS=Off \

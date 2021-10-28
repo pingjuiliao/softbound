@@ -1,0 +1,8 @@
+**/a.out
+**/peda*
+**/tmp
+**/build
+*.o
+*.ll
+*.bc
+*.exe
