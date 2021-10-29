@@ -13,6 +13,18 @@ using namespace llvm;
 
 PreservedAnalyses SoftboundPass::run(Function &F,
                                       FunctionAnalysisManager &AM) {
+    static bool HasInitialized = false ;
+    if ( !HasInitialized ) {
+        Module *M = F.getParent() ;
+        LLVMContext &C = M->getContext() ;
+        Type *VoidTy = Type::getVoidTy(C) ;
+        Type *I8PtrTy = PointerType::getInt8PtrTy(C) ;
+        Type *I32Ty =  IntegerType::getInt32Ty(C) ;
+        ArrayRef<Type*> UFPArgsTy = {I32Ty, I8PtrTy, I8PtrTy} ;
+        FunctionType *FuncUFPTy = FunctionType::get(VoidTy, UFPArgsTy, false);
+        M->getOrInsertFunction("updateFatPointer", FuncUFPTy) ;
+        // Function* UFP = Function::Create(FuncUFPTy, Function::ExternalLinkage, "updateFatPointer", M) ;
+    }
 
     // get pointer first
     harvestPointers(F) ;
@@ -25,7 +37,7 @@ PreservedAnalyses SoftboundPass::run(Function &F,
 
         }
     }
-    return PreservedAnalyses::none();
+    return PreservedAnalyses::all();
 }
 
  
@@ -54,24 +66,34 @@ void SoftboundPass::harvestPointers(Function &F) {
 
             // auto ArrElemSize =  ArrTy->getScalarSizeInBits() / 8 ;
             // uint64_t ArrSize = AllocaI->getAllocationSizeInBits(DL) ;
-
+        Type *VoidTy = Type::getVoidTy(C) ;
+        Type *I8PtrTy = PointerType::getInt8PtrTy(C) ;
+        Type *I32Ty =  IntegerType::getInt32Ty(C) ;
+        ArrayRef<Type*> UFPArgsTy = {I32Ty, I8PtrTy, I8PtrTy} ;
+        FunctionType *FuncUFPTy = FunctionType::get(VoidTy, UFPArgsTy, false);
+        
+            
             // map char[]
-            IRBuilder<> IRB(AllocaI);
+            IRBuilder<> IRB(AllocaI->getNextNode());
             // ID
             ConstantInt *PtrID = IRB.getInt32(assignedID++) ; 
             // base
-            Value* BitcastI = IRB.CreateBitCast(AllocaI, IRB.getInt8PtrTy()) ;
+            PointerType *VoidPtrTy = PointerType::get(Type::getVoidTy(C), 0) ;
+            Value* PtrBase = IRB.CreateBitCast(AllocaI, IRB.getInt8PtrTy()) ;
+
             // bound
-            // TypeSize TS = DL.getTypeAllocSize(ElemTy) * ArrTy->getNumElements();
-            // Value* AddedBound = IRB.CreateAdd(AllocaI, IRB.getInt64(TS) ) ;
-            // args
+            unsigned TS = DL.getTypeAllocSize(ElemTy) * ArrTy->getNumElements();
+            errs() << "Size : " << TS << "\n" ;
+            Value* PtrBound = IRB.CreateInBoundsGEP(ArrTy, AllocaI, IRB.getInt64(ArrTy->getNumElements()) );
+            
+
+            ArrayRef<Value*> args = {PtrID, PtrBase, PtrBound} ;
+            Function* CFP = M->getFunction("checkFatPointer") ;
+            errs() << "CFP: " <<  CFP << "\n" ;
+            Function* UFP = M->getFunction("updateFatPointer") ;
+            errs() << "UFP: " << UFP << "\n" ;
             /*
-            SmallVector<Value*, 3> args ;
-            args.emplace_back(PtrID);
-            args.emplace_back(AllocaI);
-            args.emplace_back(AddedBound) ;
-            FunctionCallee CallUFP = M->getOrInsertFunction("updateFatPointer", IRB.getVoidTy()) ;
-            IRB.CreateCall(CallUFP, args) ;
+            IRB.CreateCall(FuncUFPTy, UFP, args) ;
             */
         }
     }
