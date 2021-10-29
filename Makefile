@@ -10,7 +10,7 @@ a: a-dis
 	$(CC) -o ./a.exe a.bc 
 a-debug: a-dis
 	$(OPT) -passes=softbound -disable-output a.ll -debug-pass-manager
-a-dis: sample/a.c
-	$(CC) -m64 -O2 -S -emit-llvm -o ./a.ll sample/a.c
+a-dis: test-suite/a.c
+	$(CC) -m64 -O2 -S -emit-llvm -o ./a.ll test-suite/a.c
 clean:
 	rm *.bc *.ll *.exe 
