@@ -4,8 +4,8 @@
 
 void
 bufovfl(void) {
-    char buf[10 ] ;
-    updateFatPointer(0, (uint64_t) &buf, (uint64_t) &buf[10]) ;
+    char buf[100] ;
+    updateFatPointer(0, (uint8_t *) &buf, (uint8_t *) &buf[10]) ;
     strcpy(buf, "Hello world ! hahahahhahahahahahhaha") ;
     puts(buf) ;
 }
