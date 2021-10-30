@@ -23,14 +23,9 @@ public:
   PointerID assignedID ;
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
   // static bool isRequired() { return true;  } 
+
 private:
-
-  SmallMapVector<Value*,PointerID , 0x100> PtrMap ; 
-
-  // collect all the pointers and map them to PtrMap
   void harvestPointers(Function &F) ;
-
-  // check functions such as strcmp, memcpy
   void checkSequentialCopy(Instruction &I) ;
 
 }; // SoftboundPass end

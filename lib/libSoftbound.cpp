@@ -1,4 +1,7 @@
 #include "libSoftbound.h" 
+void _updateFatPointer(unsigned ptr_id) {
+    printf("fpID: ptr_id\n") ;
+}
 
 void updateFatPointer(unsigned ptr_id, uint8_t* base, uint8_t* bound) {
     LookupTable[ptr_id].ptr_base  = base ;
