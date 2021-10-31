@@ -5,7 +5,7 @@
 void
 bufovfl(void) {
     char buf[100] ;
-    updateFatPointer(0, (uint8_t *) &buf, (uint8_t *) &buf[10]) ;
+    _softbound_update(0, (uint8_t *) &buf, (uint8_t *) &buf[10]) ;
     strcpy(buf, "Hello world ! hahahahhahahahahahhaha") ;
     puts(buf) ;
 }

@@ -1,13 +1,12 @@
 #ifndef LIBSOFTBOUND_H
 #define LIBSOFTBOUND_H
-
-
-#include <stdio.h>
-#include <stdint.h>
-
 #ifdef __cplusplus 
 extern "C" {
 #endif
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
 
 const uint64_t NUM_PTR_MAX = 0x1000 ;
 
@@ -19,7 +18,11 @@ typedef struct FatPointer {
 
 FatPointer LookupTable[NUM_PTR_MAX] ;
 
-void updateFatPointer(unsigned ptr_id, uint8_t* base, uint8_t* bound) ; 
+
+void _softbound_update(unsigned ptr_id, uint8_t* base, uint8_t* bound) ; 
+void _softbound_check(unsigned ptr_id, uint8_t* ptr) ;
+void _softbound_propagate(unsigned dst_ptr_id, unsigned src_ptr_id) ;
+void _softbound_abort(void) ;
 
 
 #ifdef __cplusplus

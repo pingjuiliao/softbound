@@ -14,18 +14,29 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Support/raw_ostream.h"
+#define SOFTBOUND_UPDATE "_softbound_update"
+#define SOFTBOUND_PROPAGATE "_softbound_propagate"
+#define SOFTBOUND_CHECK  "_softbound_check"
 
 namespace llvm {
 
 class SoftboundPass : public PassInfoMixin<SoftboundPass> {
 public:
   typedef unsigned PointerID;
-  PointerID assignedID ;
+  PointerID AssignedID ;
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
   // static bool isRequired() { return true;  } 
+  SmallMapVector<Value*, PointerID, 0x100> PointerIDMap ;
 
 private:
+  // the main body of this passes
+  bool initializeLinkage(Module *M) ;
   void harvestPointers(Function &F) ;
+  void checkPointers(Function &F) ;
+  
+  // helpers
+  void updateArrayBaseBound(AllocaInst *AllocaI) ;
+  void propagatePointers(Instruction &I) ;
   void checkSequentialCopy(Instruction &I) ;
 
 }; // SoftboundPass end
