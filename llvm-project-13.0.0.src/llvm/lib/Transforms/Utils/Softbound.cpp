@@ -50,6 +50,17 @@ bool SoftboundPass::initializeLinkage(Module* M) {
                 SOFTBOUND_PROPAGATE, M) ;
 
     }
+    
+    // SOFTBOUND_CHECK: Check Fat Pointer
+    Function *CFP = M->getFunction(SOFTBOUND_CHECK) ;
+    if ( !CFP ) {
+        FunctionType *FnTy = FunctionType::get(Type::getVoidTy(Ctx), true) ;
+        PFP = Function::Create(FnTy, 
+                GlobalValue::ExternalLinkage, 
+                M->begin()->getAddressSpace(),
+                SOFTBOUND_CHECK, M);
+    }
+
     return true ;
 }
 
@@ -159,19 +170,35 @@ void SoftboundPass::checkSequentialCopy(Instruction &I) {
             errs() << "DST is " << *DstPtr << "\n" ;
             return ;
         } 
-        Value* CpySize = CallI->getOperand(2) ;
-        if ( !CpySize->getType()->isIntegerTy() ) {
+        auto CpySize = dyn_cast<ConstantInt>(CallI->getOperand(2)) ;
+        if ( !CpySize || !CpySize->getType()->isIntegerTy() ) {
             errs() << "3rd argument is not size\n" ;
             return ;
         }
-        /*
-        IRBuilder<> IRB(CallI->getPrevNode()) ;
-        ConstantInt* PtrID = IRB.getInt32(PointerIDMap[Dst]) ;
-        */
+        uint64_t u64Size = CpySize->getZExtValue() ;
+
+        
+        writeCheckCode(CallI, DstPtr, u64Size);
         errs() << "CHECKED !!!!!\n" ;
          
     }
-
-
 }
 
+void SoftboundPass::writeCheckCode(Instruction *I, Value* Ptr, uint64_t offset) {
+    Module *M = I->getFunction()->getParent() ; 
+    Function *CFP = M->getFunction(SOFTBOUND_CHECK) ; 
+
+    IRBuilder<> IRB(I->getPrevNode()) ;
+    ConstantInt* PtrID = IRB.getInt32(PointerIDMap[I]) ;
+    if ( !offset ) {
+        IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, Ptr}) ;
+        return ;
+    }
+    // NOTE: this method uses PtrToInt and IntToPtr
+    // Though we can finish this in GEP, but GEP requires weird
+    // type match. e.g. it must be [20 * i8] if it's an array pointer
+    Value* Int64Ptr = IRB.CreatePtrToInt(Ptr, IRB.getInt64Ty()) ;
+    Value* AddedPtr = IRB.CreateAdd(Int64Ptr, IRB.getInt64(offset)) ;
+    Value* NewPtr   = IRB.CreateIntToPtr(AddedPtr, IRB.getInt8PtrTy()) ;
+    IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, Ptr} );
+}

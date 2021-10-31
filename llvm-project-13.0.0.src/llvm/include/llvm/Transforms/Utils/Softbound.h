@@ -38,6 +38,7 @@ private:
   void updateArrayBaseBound(AllocaInst *AllocaI) ;
   void propagatePointers(Instruction &I) ;
   void checkSequentialCopy(Instruction &I) ;
+  void writeCheckCode(Instruction *I, Value* Ptr, uint64_t offset= 0);
 
 }; // SoftboundPass end
 
