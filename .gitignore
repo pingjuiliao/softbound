@@ -6,3 +6,8 @@
 *.ll
 *.bc
 *.exe
+./test-suite/*.o
+./test-suite/*.ll
+./test-suite/*.bc
+./test-suite/*.exe
+
