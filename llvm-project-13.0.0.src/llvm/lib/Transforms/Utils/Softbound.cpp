@@ -30,14 +30,14 @@ bool SoftboundPass::initializeLinkage(Module* M) {
         return false ; 
     } 
         
-    // SOFTBOUND_UPDATE
-    Function *UFP =  M->getFunction(SOFTBOUND_UPDATE) ;
-    if ( !UFP ) {
+    // SOFTBOUND_REGISTER
+    Function *RFP =  M->getFunction(SOFTBOUND_REGISTER) ;
+    if ( !RFP ) {
         FunctionType *FnTy = FunctionType::get(Type::getVoidTy(Ctx), true) ;
-        UFP = Function::Create(FnTy, 
+        RFP = Function::Create(FnTy, 
                 GlobalValue::ExternalLinkage, 
                 M->begin()->getAddressSpace(), // get a random function 
-                SOFTBOUND_UPDATE, M) ;
+                SOFTBOUND_REGISTER, M) ;
     }
     
     // SOFTBOUND_PROPAGATE
@@ -71,38 +71,38 @@ void SoftboundPass::harvestPointers(Function &F) {
     for ( auto &BB: F ) {
         for ( auto &I: BB ) {
             if ( auto *Alloca = dyn_cast<AllocaInst>(&I) ) {
-                updateArrayBaseBound(Alloca) ;
-                continue ;
+                registerArray(Alloca) ;
             } 
-            propagatePointers(I) ;
         }
     }
 }
 
-void SoftboundPass::updateArrayBaseBound(AllocaInst *AllocaI) {
+void SoftboundPass::registerArray(AllocaInst *AllocaI) {
 
     Module* M = AllocaI->getFunction()->getParent() ;
-
-    // and it must be an array
+    DataLayout DL = M->getDataLayout() ; //used for type size
+    
+    // it must be an array
     Type* AllocaTy = AllocaI->getAllocatedType() ;
     ArrayType* ArrTy = dyn_cast<ArrayType>(AllocaTy); 
     if ( !ArrTy ) return  ;
 
     // and it's element must have size ( hardly not true )
     Type* ElemTy = ArrTy->getElementType() ;
-    if ( !ElemTy->isSized() ) return  ;
-
+    if ( !ElemTy->isSized() ) return;
 
     // map char[]
     IRBuilder<> IRB(AllocaI->getNextNode());
     ConstantInt *PtrID = IRB.getInt32(AssignedID) ; 
     Value* PtrBase = IRB.CreateBitCast(AllocaI, IRB.getInt8PtrTy()) ;
-    Value* GEPPtrBound = IRB.CreateInBoundsGEP(ArrTy, AllocaI, IRB.getInt64(ArrTy->getNumElements()) );
-    Value* PtrBound = IRB.CreateBitCast(GEPPtrBound, IRB.getInt8PtrTy()) ;
-
-    Function* UFP = M->getFunction(SOFTBOUND_UPDATE) ;
+    Value* IntBase = IRB.CreatePtrToInt(PtrBase, IRB.getInt64Ty()) ;
+    unsigned TotalBits = DL.getTypeStoreSize(AllocaTy) ; 
+    ConstantInt* TotalSize = IRB.getInt64(TotalBits) ;
+    Value* IntBound = IRB.CreateAdd(IntBase, TotalSize) ;
+    Value* PtrBound = IRB.CreateIntToPtr(IntBound, IRB.getInt8PtrTy()) ;
+    Function* RFP = M->getFunction(SOFTBOUND_REGISTER) ;
     
-    IRB.CreateCall(UFP->getFunctionType(), UFP, {PtrID, PtrBase, PtrBound}) ;
+    IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrBase, PtrBound}) ;
     PointerIDMap[AllocaI] = AssignedID ;
     AssignedID ++ ;
 
@@ -164,42 +164,69 @@ void SoftboundPass::checkSequentialCopy(Instruction &I) {
         // Size: if dst in map, check 
         if ( CallI->getNumOperands() < 3 ) return ;
 
+        // Dst 
         Value* DstPtr = CallI->getOperand(0) ; 
-        if ( PointerIDMap.find(DstPtr) == PointerIDMap.end()) {
-            errs() << "cannot instrument buggy function" << FnName ;
-            errs() << "DST is " << *DstPtr << "\n" ;
-            return ;
-        } 
+        Value* DefinedPtr = getDefinition(DstPtr) ;  
+        // Size
         auto CpySize = dyn_cast<ConstantInt>(CallI->getOperand(2)) ;
         if ( !CpySize || !CpySize->getType()->isIntegerTy() ) {
             errs() << "3rd argument is not size\n" ;
             return ;
-        }
-        uint64_t u64Size = CpySize->getZExtValue() ;
-
-        
-        writeCheckCode(CallI, DstPtr, u64Size);
-        errs() << FnName << " CHECKED !!!!!\n" ;
+        } 
+        // [dst, dst+size) or [dst, dst+size-1]
+        uint64_t u64Size = CpySize->getZExtValue() - 1 ;
+        writeCheckCode(CallI, DefinedPtr, DstPtr, u64Size);
+        errs() << FnName << " CHECK " << *DefinedPtr << "!!!\n" ;
          
     }
 }
 
-void SoftboundPass::writeCheckCode(Instruction *I, Value* Ptr, uint64_t offset) {
+Value* SoftboundPass::getDefinition(Value* V) {
+
+    Value* Ptr = V ;
+    while ( !isa<AllocaInst>(Ptr) ) {
+
+        auto PtrU = dyn_cast<User>(Ptr) ;
+        if ( !PtrU ) {
+            errs() << *Ptr << " is not a definition nor does it a User type\n" ;
+            return nullptr ;
+        }
+
+        unsigned NumOps = PtrU->getNumOperands() ;
+        if ( !NumOps ) {
+            errs() << *PtrU << " does not have operands....\n" ;
+            return nullptr;
+        }
+        Value* NextV = PtrU->getOperand(0) ; // bitcast, GEP 
+        errs() << "Update: \n" << *Ptr << "backtrack to" \
+               << *NextV ;
+        Ptr = NextV ; 
+    }
+    errs() << "Success: " << *Ptr << " FOUND !\n"; 
+    return Ptr ;
+}
+
+
+void SoftboundPass::writeCheckCode(Instruction *I, Value* FatPtr, Value* AccessPtr, uint64_t offset) {
     Module *M = I->getFunction()->getParent() ; 
     Function *CFP = M->getFunction(SOFTBOUND_CHECK) ; 
 
+
     IRBuilder<> IRB(I->getPrevNode()) ;
-    ConstantInt* PtrID = IRB.getInt32(PointerIDMap[I]) ;
+    ConstantInt* PtrID = IRB.getInt32(PointerIDMap[FatPtr]) ;
     if ( !offset ) {
-        IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, Ptr}) ;
+        IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, AccessPtr}) ;
         return ;
     }
     // NOTE: this method uses PtrToInt and IntToPtr
     // Though we can finish this in GEP, but GEP requires weird
     // type match. e.g. it must be [20 * i8] if it's an array pointer
-    Value* Int64Ptr = IRB.CreatePtrToInt(Ptr, IRB.getInt64Ty()) ;
+    Value* Int64Ptr = IRB.CreatePtrToInt(AccessPtr, IRB.getInt64Ty()) ;
     Value* AddedPtr = IRB.CreateAdd(Int64Ptr, IRB.getInt64(offset)) ;
     Value* NewPtr   = IRB.CreateIntToPtr(AddedPtr, IRB.getInt8PtrTy()) ;
+    // SOFTBOUND_CHECK(ptr_id, ptr) ;
     IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, NewPtr} );
 
 }
+
+

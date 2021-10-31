@@ -1,6 +1,6 @@
 #include "libSoftbound.h" 
 
-void _softbound_update(unsigned ptr_id, uint8_t* base, uint8_t* bound) {
+void _softbound_register(unsigned ptr_id, uint8_t* base, uint8_t* bound) {
     LookupTable[ptr_id].ptr_base  = base ;
     LookupTable[ptr_id].ptr_bound = bound;
 }
@@ -9,6 +9,7 @@ void _softbound_check(unsigned ptr_id, uint8_t* ptr) {
     uint8_t* base = LookupTable[ptr_id].ptr_base ;
     uint8_t* bound= LookupTable[ptr_id].ptr_bound;
     if ( base <= ptr && ptr < bound ) {  
+        printf("[%p, %p), ptr is inside: %p\n", base, bound, ptr) ;
         return ;
     }
     printf("[%p, %p), but ptr: %p\n", base, bound, ptr) ;

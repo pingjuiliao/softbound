@@ -14,7 +14,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Support/raw_ostream.h"
-#define SOFTBOUND_UPDATE "_softbound_update"
+#define SOFTBOUND_REGISTER "_softbound_register"
 #define SOFTBOUND_PROPAGATE "_softbound_propagate"
 #define SOFTBOUND_CHECK  "_softbound_check"
 
@@ -29,16 +29,21 @@ public:
   SmallMapVector<Value*, PointerID, 0x100> PointerIDMap ;
 
 private:
+
   // the main body of this passes
   bool initializeLinkage(Module *M) ;
   void harvestPointers(Function &F) ;
   void checkPointers(Function &F) ;
   
   // helpers
-  void updateArrayBaseBound(AllocaInst *AllocaI) ;
+  
+  // should return AllocaInst or GlobalVariable
+  void registerArray(AllocaInst *AllocaI) ;
   void propagatePointers(Instruction &I) ;
   void checkSequentialCopy(Instruction &I) ;
-  void writeCheckCode(Instruction *I, Value* Ptr, uint64_t offset= 0);
+  void writeCheckCode(Instruction *I, Value* FatPtr, Value* Ptr, uint64_t offset= 0);
+  Value* getDefinition(Value *V) ; 
+
 
 }; // SoftboundPass end
 

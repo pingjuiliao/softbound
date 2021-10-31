@@ -9,7 +9,7 @@ char gbuf[20] ;
 int
 main(int argc, char** argv) { 
     if ( argc < 2 ) {
-        fprintf(stderr, "Usage: %s <bufovfl> <bufovfl> <Integer>\n", argv[0]) ;
+        fprintf(stderr, "Usage: %s <Integer>\n", argv[0]) ;
         exit(-1) ;
     }
     test_runtime(argv[1]) ;
@@ -38,7 +38,7 @@ test_runtime(char* s) {
 
     buf[8] = 1337 ;
     puts("Printing out large buffer") ;
-    for ( int i = 0; i < 11; ++i ) {
+    for ( int i = 0; i < 11; ++i ) { // this will be translated to llvm.memcpy...
         printf("%d\n", large[i]) ; 
     }
 

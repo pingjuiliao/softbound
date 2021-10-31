@@ -9,7 +9,7 @@ char gbuf[20] ;
 int
 main(int argc, char** argv) { 
     if ( argc < 2 ) {
-        fprintf(stderr, "Usage: %s <bufovfl> <bufovfl> <Integer>\n", argv[0]) ;
+        fprintf(stderr, "Usage: %s <Integer>\n", argv[0]) ;
         exit(-1) ;
     }
     test_arbitW(argv[1]) ;
