@@ -179,7 +179,7 @@ void SoftboundPass::checkSequentialCopy(Instruction &I) {
 
         
         writeCheckCode(CallI, DstPtr, u64Size);
-        errs() << "CHECKED !!!!!\n" ;
+        errs() << FnName << " CHECKED !!!!!\n" ;
          
     }
 }
@@ -200,5 +200,6 @@ void SoftboundPass::writeCheckCode(Instruction *I, Value* Ptr, uint64_t offset) 
     Value* Int64Ptr = IRB.CreatePtrToInt(Ptr, IRB.getInt64Ty()) ;
     Value* AddedPtr = IRB.CreateAdd(Int64Ptr, IRB.getInt64(offset)) ;
     Value* NewPtr   = IRB.CreateIntToPtr(AddedPtr, IRB.getInt8PtrTy()) ;
-    IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, Ptr} );
+    IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, NewPtr} );
+
 }
