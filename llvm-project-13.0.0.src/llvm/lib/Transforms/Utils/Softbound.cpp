@@ -112,6 +112,7 @@ void SoftboundPass::checkPointers(Function &F) {
         for ( auto &I: BB ) {
             // memcpy, strcpy
             checkSequentialWrite(I) ;
+            checkStore(I) ;
         }
     }
 }
@@ -147,6 +148,12 @@ void SoftboundPass::checkStore(Instruction &I) {
     auto *StoreI = dyn_cast<StoreInst>(&I) ;
     if ( !StoreI ) return ;
 
+    // assert(StoreI->getNumOperands() >= 2 ) ;
+    Value* DstPtr = StoreI->getOperand(1) ; 
+    Value* DefinedPtr = getDefinition(DstPtr) ;
+    
+    writeCheckCode(StoreI, DefinedPtr, DstPtr) ;
+
 }
 
 
@@ -154,10 +161,14 @@ void SoftboundPass::checkStore(Instruction &I) {
 void SoftboundPass::checkSequentialWrite(Instruction &I) {
     auto *CallI = dyn_cast<CallInst>(&I) ;
     if ( !CallI ) return ;
-    // LEARN: ArrayRef<StringRef> is very weird here........  
-    SmallVector<StringRef> CheckFnList = {"strcpy", "strncpy",
+    // TODO (MAYBE): 
+    // a constant list should be of much simple types.
+    // ArrayRef<StringRef> => cannot use the forloop to capture
+    const SmallVector<StringRef> CheckFnList = {"strcpy", "strncpy",
                                           "memcpy" , "memset" };
-    // Function* Caller = CallI->getFunction() ;
+
+
+    // TODO: make this 
     Function* Callee = CallI->getCalledFunction() ;
     StringRef FnName = Callee->getName() ;
     bool ShouldBeChecked = false ;
@@ -212,9 +223,15 @@ Value* SoftboundPass::getDefinition(Value* V) {
             errs() << *PtrU << " does not have operands....\n" ;
             return nullptr;
         }
-        Value* NextV = PtrU->getOperand(0) ; // bitcast, GEP 
-        errs() << "Update: \n" << *Ptr << "backtrack to" \
-               << *NextV ;
+        Value* NextV ;
+        if ( isa<PHINode>(PtrU) ) {
+            NextV = PtrU->getOperand(1) ;
+        } else {
+            NextV = PtrU->getOperand(0) ; // bitcast, GEP 
+        }
+        errs() << "\n===================================" \
+               << "Update: \n" << *Ptr << " backtrack to" \
+               << *NextV << "\n=======================\n";
         Ptr = NextV ; 
     }
     errs() << "Success: " << *Ptr << " FOUND !\n"; 
@@ -223,9 +240,15 @@ Value* SoftboundPass::getDefinition(Value* V) {
 
 
 void SoftboundPass::writeCheckCode(Instruction *I, Value* FatPtr, Value* AccessPtr, uint64_t offset) {
+    
+    if ( PointerIDMap.find(FatPtr) == PointerIDMap.end() ) {
+        errs() << "Cannot place check before: " << *I \
+               << "\nbecause " << *FatPtr << " is not registered \n" ; 
+        return ;
+    }
+
     Module *M = I->getFunction()->getParent() ; 
     Function *CFP = M->getFunction(SOFTBOUND_CHECK) ; 
-
 
     IRBuilder<> IRB(I->getPrevNode()) ;
     ConstantInt* PtrID = IRB.getInt32(PointerIDMap[FatPtr]) ;
