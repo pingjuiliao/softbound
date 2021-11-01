@@ -65,7 +65,6 @@ bool SoftboundPass::initializeLinkage(Module* M) {
 }
 
 void SoftboundPass::harvestPointers(Function &F) {
-    Module* M = F.getParent() ;
     // LLVMContext &Ctx = M->getContext() ; 
 
     for ( auto &BB: F ) {
@@ -112,7 +111,7 @@ void SoftboundPass::checkPointers(Function &F) {
     for ( auto &BB: F ) {
         for ( auto &I: BB ) {
             // memcpy, strcpy
-            checkSequentialCopy(I) ;
+            checkSequentialWrite(I) ;
         }
     }
 }
@@ -144,18 +143,33 @@ void SoftboundPass::propagatePointers(Instruction &I) {
     AssignedID ++ ;
 
 }
+void SoftboundPass::checkStore(Instruction &I) {
+    auto *StoreI = dyn_cast<StoreInst>(&I) ;
+    if ( !StoreI ) return ;
+
+}
 
 
-void SoftboundPass::checkSequentialCopy(Instruction &I) {
+// Place a check before { strcpy, strncpy, memcpy, memset } 
+void SoftboundPass::checkSequentialWrite(Instruction &I) {
     auto *CallI = dyn_cast<CallInst>(&I) ;
     if ( !CallI ) return ;
-    const SmallVector<StringRef, 8> SizedFn = {"memcpy", "strncpy"} ; 
-    // check  
+    // LEARN: ArrayRef<StringRef> is very weird here........  
+    SmallVector<StringRef> CheckFnList = {"strcpy", "strncpy",
+                                          "memcpy" , "memset" };
     // Function* Caller = CallI->getFunction() ;
     Function* Callee = CallI->getCalledFunction() ;
     StringRef FnName = Callee->getName() ;
+    bool ShouldBeChecked = false ;
+    for ( auto Name: CheckFnList ) {
+        if ( FnName.contains(Name) ) {
+            ShouldBeChecked = true ;
+            break ;
+        }
+    }
 
-    if ( !FnName.contains("cpy") ) 
+
+    if ( !ShouldBeChecked )
         return ;
     if ( !FnName.contains("strcpy")) {
         // These function follows the Fn(dst, src, size) format
@@ -164,6 +178,7 @@ void SoftboundPass::checkSequentialCopy(Instruction &I) {
         // Size: if dst in map, check 
         if ( CallI->getNumOperands() < 3 ) return ;
 
+        errs() << "START CHECKING " << FnName << "\n" ;
         // Dst 
         Value* DstPtr = CallI->getOperand(0) ; 
         Value* DefinedPtr = getDefinition(DstPtr) ;  

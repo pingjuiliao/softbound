@@ -40,7 +40,8 @@ private:
   // should return AllocaInst or GlobalVariable
   void registerArray(AllocaInst *AllocaI) ;
   void propagatePointers(Instruction &I) ;
-  void checkSequentialCopy(Instruction &I) ;
+  void checkStore(Instruction &I) ;
+  void checkSequentialWrite(Instruction &I) ;
   void writeCheckCode(Instruction *I, Value* FatPtr, Value* Ptr, uint64_t offset= 0);
   Value* getDefinition(Value *V) ; 
 
