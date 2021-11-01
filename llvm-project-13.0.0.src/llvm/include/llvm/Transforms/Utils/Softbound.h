@@ -38,7 +38,8 @@ private:
   // helpers
   
   // should return AllocaInst or GlobalVariable
-  void registerArray(AllocaInst *AllocaI) ;
+  void registerPointer(AllocaInst *AllocaI, PointerType *PtrTy) ;
+  void registerArray(AllocaInst *AllocaI, ArrayType *ArrTy)  ;
   void propagatePointers(Instruction &I) ;
   void checkStore(Instruction &I) ;
   void checkSequentialWrite(Instruction &I) ;

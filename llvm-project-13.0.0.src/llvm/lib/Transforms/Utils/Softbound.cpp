@@ -65,37 +65,54 @@ bool SoftboundPass::initializeLinkage(Module* M) {
 }
 
 void SoftboundPass::harvestPointers(Function &F) {
-    // LLVMContext &Ctx = M->getContext() ; 
 
     for ( auto &BB: F ) {
         for ( auto &I: BB ) {
-            if ( auto *Alloca = dyn_cast<AllocaInst>(&I) ) {
-                registerArray(Alloca) ;
-            } 
+            // local variable
+            if ( auto AllocaI = dyn_cast<AllocaInst>(&I) ) {
+
+                Type* AllocatedTy = AllocaI->getAllocatedType() ;
+                if ( AllocatedTy->isArrayTy() )  {
+                    auto ArrTy = dyn_cast<ArrayType>(AllocatedTy) ;
+                    registerArray(AllocaI, ArrTy) ;
+                } 
+                /*else if ( AllocatedTy->isPointerTy() ) {
+                    auto PtrTy = dyn_cast<PointerType(AllocatedTy) ;
+                    registerPointer(AllocaI)
+                }*/
+                // registerPointer(Alloca) ;
+            }
+            // TODO: global variable
+            // TODO: function argument
+            
         }
     }
 }
 
-void SoftboundPass::registerArray(AllocaInst *AllocaI) {
+void SoftboundPass::registerArray(AllocaInst *AllocaI, ArrayType *ArrTy) {
 
-    Module* M = AllocaI->getFunction()->getParent() ;
-    DataLayout DL = M->getDataLayout() ; //used for type size
     
     // it must be an array
-    Type* AllocaTy = AllocaI->getAllocatedType() ;
-    ArrayType* ArrTy = dyn_cast<ArrayType>(AllocaTy); 
+    /*
+    Type* AllocatedTy = AllocaI->getAllocatedType() ;
+    ArrayType* ArrTy = dyn_cast<ArrayType>(AllocatedTy); 
     if ( !ArrTy ) return  ;
-
+*/
     // and it's element must have size ( hardly not true )
     Type* ElemTy = ArrTy->getElementType() ;
     if ( !ElemTy->isSized() ) return;
+    
 
-    // map char[]
+    // Ready to write code, setup first
+    Module* M = AllocaI->getFunction()->getParent() ;
+    DataLayout DL = M->getDataLayout() ; //used for type size
+
+    // write code
     IRBuilder<> IRB(AllocaI->getNextNode());
     ConstantInt *PtrID = IRB.getInt32(AssignedID) ; 
     Value* PtrBase = IRB.CreateBitCast(AllocaI, IRB.getInt8PtrTy()) ;
     Value* IntBase = IRB.CreatePtrToInt(PtrBase, IRB.getInt64Ty()) ;
-    unsigned TotalBits = DL.getTypeStoreSize(AllocaTy) ; 
+    unsigned TotalBits = DL.getTypeStoreSize(ArrTy) ; 
     ConstantInt* TotalSize = IRB.getInt64(TotalBits) ;
     Value* IntBound = IRB.CreateAdd(IntBase, TotalSize) ;
     Value* PtrBound = IRB.CreateIntToPtr(IntBound, IRB.getInt8PtrTy()) ;
@@ -107,6 +124,10 @@ void SoftboundPass::registerArray(AllocaInst *AllocaI) {
 
 }
 
+
+void SoftboundPass::registerPointer(AllocaInst *AllocaI, PointerType *PtrTy) {
+
+}
 void SoftboundPass::checkPointers(Function &F) {
     for ( auto &BB: F ) {
         for ( auto &I: BB ) {
@@ -225,6 +246,7 @@ Value* SoftboundPass::getDefinition(Value* V) {
         }
         Value* NextV ;
         if ( isa<PHINode>(PtrU) ) {
+            // TODO: this value (Op1) may not be correct
             NextV = PtrU->getOperand(1) ;
         } else {
             NextV = PtrU->getOperand(0) ; // bitcast, GEP 
