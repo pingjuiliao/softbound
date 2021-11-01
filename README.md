@@ -1,22 +1,24 @@
 ## Softbound
-It's a function pass, 
+a function pass, using the new pass manager
 
 
-## to build llvm
+## to build llvm ( REQUIRED )
 ```
 ./setup.py
 ```
 
-
-## to test if the compilation succeeds
+## to build shared library ( REQUIRED )
 ```
 ## build our libSoftbound.so first
 cd lib 
 make 
+```
 
+## to test if the compilation succeeds
+```
+## Requirement: 1) LLVM built 2) libSoftbound built
 ## this will compile ./test-suite/a.c with our pass
-cd ..
-make
+make        # in the REPO_ROOT
 ./a.exe
 ```
 
@@ -25,6 +27,7 @@ make
 I am just using that for checking whether the pass works or not  
 To perform test separately, do this :  
 ```
+## Requirement: 1) LLVM built 2) libSoftbound built
 ## assume ${REPO_ROOT}/lib/libSoftbound.so exists...
 cd ./test-suite
 make test-xxxxx
