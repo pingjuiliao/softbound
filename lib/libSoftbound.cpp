@@ -1,8 +1,10 @@
 #include "libSoftbound.h" 
 
 void _softbound_register(unsigned ptr_id, uint8_t* base, uint8_t* bound) {
-    LookupTable[ptr_id].ptr_base  = base ;
-    LookupTable[ptr_id].ptr_bound = bound;
+    if ( base != NULL && bound != NULL  ) {
+        LookupTable[ptr_id].ptr_base  = base ;
+        LookupTable[ptr_id].ptr_bound = bound;
+    }
 }
 
 void _softbound_check(unsigned ptr_id, uint8_t* ptr) {

@@ -75,16 +75,15 @@ void SoftboundPass::harvestPointers(Function &F) {
                 if ( AllocatedTy->isArrayTy() )  {
                     auto ArrTy = dyn_cast<ArrayType>(AllocatedTy) ;
                     registerArray(AllocaI, ArrTy) ;
-                } 
-                /*else if ( AllocatedTy->isPointerTy() ) {
-                    auto PtrTy = dyn_cast<PointerType(AllocatedTy) ;
-                    registerPointer(AllocaI)
-                }*/
-                // registerPointer(Alloca) ;
+                } else if ( AllocatedTy->isPointerTy() ) {
+                    auto PtrTy = dyn_cast<PointerType>(AllocatedTy) ;
+                    registerPointer(AllocaI, PtrTy) ;
+                }
             }
             // TODO: global variable
+
             // TODO: function argument
-            
+            // Propagate 
         }
     }
 }
@@ -92,12 +91,6 @@ void SoftboundPass::harvestPointers(Function &F) {
 void SoftboundPass::registerArray(AllocaInst *AllocaI, ArrayType *ArrTy) {
 
     
-    // it must be an array
-    /*
-    Type* AllocatedTy = AllocaI->getAllocatedType() ;
-    ArrayType* ArrTy = dyn_cast<ArrayType>(AllocatedTy); 
-    if ( !ArrTy ) return  ;
-*/
     // and it's element must have size ( hardly not true )
     Type* ElemTy = ArrTy->getElementType() ;
     if ( !ElemTy->isSized() ) return;
@@ -110,6 +103,8 @@ void SoftboundPass::registerArray(AllocaInst *AllocaI, ArrayType *ArrTy) {
     // write code
     IRBuilder<> IRB(AllocaI->getNextNode());
     ConstantInt *PtrID = IRB.getInt32(AssignedID) ; 
+    PointerIDMap[AllocaI] = AssignedID ;
+    AssignedID ++ ;
     Value* PtrBase = IRB.CreateBitCast(AllocaI, IRB.getInt8PtrTy()) ;
     Value* IntBase = IRB.CreatePtrToInt(PtrBase, IRB.getInt64Ty()) ;
     unsigned TotalBits = DL.getTypeStoreSize(ArrTy) ; 
@@ -119,13 +114,23 @@ void SoftboundPass::registerArray(AllocaInst *AllocaI, ArrayType *ArrTy) {
     Function* RFP = M->getFunction(SOFTBOUND_REGISTER) ;
     
     IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrBase, PtrBound}) ;
-    PointerIDMap[AllocaI] = AssignedID ;
-    AssignedID ++ ;
 
 }
 
 
 void SoftboundPass::registerPointer(AllocaInst *AllocaI, PointerType *PtrTy) {
+
+    Module* M = AllocaI->getFunction()->getParent() ;
+    DataLayout DL = M->getDataLayout() ;
+
+    // write code
+    IRBuilder<> IRB(AllocaI->getNextNode()) ;
+    ConstantInt *PtrID = IRB.getInt32(AssignedID) ;
+    PointerIDMap[AllocaI] = AssignedID ;
+    AssignedID ++ ;
+    Value* PtrNull = IRB.CreateIntToPtr(IRB.getInt64(0), IRB.getInt8PtrTy()) ;
+    Function* RFP = M->getFunction(SOFTBOUND_REGISTER) ;
+    IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrNull, PtrNull}) ;
 
 }
 void SoftboundPass::checkPointers(Function &F) {
