@@ -1,4 +1,6 @@
 ## Softbound
+It's a function pass, 
+
 
 ## to build llvm
 ```
@@ -6,9 +8,9 @@
 ```
 
 
-## to test if the pass work
+## to test if the compilation succeeds
 ```
-## make our libSoftbound.so first
+## build our libSoftbound.so first
 cd lib 
 make 
 
@@ -18,11 +20,12 @@ make
 ./a.exe
 ```
 
-## to test 
+## to test if softbound can protect vulnerable codes 
 ./test-suite/a.c is a collection of tests.  
 I am just using that for checking whether the pass works or not  
 To perform test separately, do this :  
 ```
+## assume ${REPO_ROOT}/lib/libSoftbound.so exists...
 cd ./test-suite
 make test-xxxxx
 ./test-xxxxx.exe
