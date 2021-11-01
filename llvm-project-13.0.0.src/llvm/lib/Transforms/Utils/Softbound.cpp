@@ -178,7 +178,7 @@ void SoftboundPass::checkStore(Instruction &I) {
     errs() << "SOFTBOUND-Checking StoreInst " << *StoreI << "\n" ;
     Value* DstPtr = StoreI->getOperand(1) ; // GEP? 
     Value* DefinedPtr = getDefinition(DstPtr) ;
-    writeCheckCode(StoreI, DefinedPtr, DstPtr, 0) ;
+    writeCheckCode(StoreI, DefinedPtr, DstPtr) ;
 
 }
 
@@ -287,10 +287,10 @@ void SoftboundPass::writeCheckCode(Instruction *I, Value* FatPtr, Value* AccessP
     IRBuilder<> IRB(AccessPtrInst->getNextNode()) ;
     ConstantInt* PtrID = IRB.getInt32(PointerIDMap[FatPtr]) ;
     
-    /*if ( !offset ) {
+    if ( !offset ) {
         IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, AccessPtr}) ;
         return ;
-    }*/
+    }
     // NOTE: this method uses PtrToInt and IntToPtr
     // Though we can finish this in GEP, but GEP requires weird
     // type match. e.g. it must be [20 * i8] if it's an array pointer
