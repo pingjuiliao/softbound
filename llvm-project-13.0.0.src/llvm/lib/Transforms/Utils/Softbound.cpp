@@ -83,7 +83,7 @@ void SoftboundPass::harvestPointers(Function &F) {
             // TODO: global variable
 
             // TODO: function argument
-            // Propagate 
+            // TODO: Propagate 
         }
     }
 }
@@ -175,10 +175,10 @@ void SoftboundPass::checkStore(Instruction &I) {
     if ( !StoreI ) return ;
 
     // assert(StoreI->getNumOperands() >= 2 ) ;
-    Value* DstPtr = StoreI->getOperand(1) ; 
+    errs() << "SOFTBOUND-Checking StoreInst " << *StoreI << "\n" ;
+    Value* DstPtr = StoreI->getOperand(1) ; // GEP? 
     Value* DefinedPtr = getDefinition(DstPtr) ;
-    
-    writeCheckCode(StoreI, DefinedPtr, DstPtr) ;
+    writeCheckCode(StoreI, DefinedPtr, DstPtr, 0) ;
 
 }
 
@@ -215,7 +215,7 @@ void SoftboundPass::checkSequentialWrite(Instruction &I) {
         // Size: if dst in map, check 
         if ( CallI->getNumOperands() < 3 ) return ;
 
-        errs() << "START CHECKING " << FnName << "\n" ;
+        errs() << "\nSOFTBOUND-Checking CallInst" << *CallI << "\n" ;
         // Dst 
         Value* DstPtr = CallI->getOperand(0) ; 
         Value* DefinedPtr = getDefinition(DstPtr) ;  
@@ -227,6 +227,7 @@ void SoftboundPass::checkSequentialWrite(Instruction &I) {
         } 
         // [dst, dst+size) or [dst, dst+size-1]
         uint64_t u64Size = CpySize->getZExtValue() - 1 ;
+
         writeCheckCode(CallI, DefinedPtr, DstPtr, u64Size);
         errs() << FnName << " CHECK " << *DefinedPtr << "!!!\n" ;
          
@@ -256,8 +257,8 @@ Value* SoftboundPass::getDefinition(Value* V) {
         } else {
             NextV = PtrU->getOperand(0) ; // bitcast, GEP 
         }
-        errs() << "\n===================================" \
-               << "Update: \n" << *Ptr << " backtrack to" \
+        errs() << "===================================" \
+               << "\nUpdate: \n" << *Ptr << " backtrack to" \
                << *NextV << "\n=======================\n";
         Ptr = NextV ; 
     }
@@ -273,16 +274,23 @@ void SoftboundPass::writeCheckCode(Instruction *I, Value* FatPtr, Value* AccessP
                << "\nbecause " << *FatPtr << " is not registered \n" ; 
         return ;
     }
-
-    Module *M = I->getFunction()->getParent() ; 
-    Function *CFP = M->getFunction(SOFTBOUND_CHECK) ; 
-
-    IRBuilder<> IRB(I->getPrevNode()) ;
-    ConstantInt* PtrID = IRB.getInt32(PointerIDMap[FatPtr]) ;
-    if ( !offset ) {
-        IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, AccessPtr}) ;
+    auto AccessPtrInst = dyn_cast<Instruction>(AccessPtr) ;
+    if ( !AccessPtrInst ) {
+        // hardly happen: we use GEP to make dereferences...
+        errs() << "AccessPtr is not a instruction\n" ;
         return ;
     }
+    
+    Module *M = I->getFunction()->getParent() ; 
+    Function *CFP = M->getFunction(SOFTBOUND_CHECK) ; 
+    // Don't use IRBuilder<> IRB(I->getPrevNode()) ;
+    IRBuilder<> IRB(AccessPtrInst->getNextNode()) ;
+    ConstantInt* PtrID = IRB.getInt32(PointerIDMap[FatPtr]) ;
+    
+    /*if ( !offset ) {
+        IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, AccessPtr}) ;
+        return ;
+    }*/
     // NOTE: this method uses PtrToInt and IntToPtr
     // Though we can finish this in GEP, but GEP requires weird
     // type match. e.g. it must be [20 * i8] if it's an array pointer
