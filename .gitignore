@@ -10,4 +10,4 @@
 ./test-suite/*.ll
 ./test-suite/*.bc
 ./test-suite/*.exe
-
+./lib/*.so

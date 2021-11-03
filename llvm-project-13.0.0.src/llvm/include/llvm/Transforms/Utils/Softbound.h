@@ -15,7 +15,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Support/raw_ostream.h"
 #define SOFTBOUND_REGISTER "_softbound_register"
-#define SOFTBOUND_PROPAGATE "_softbound_propagate"
+#define SOFTBOUND_UPDATE "_softbound_update"
 #define SOFTBOUND_CHECK  "_softbound_check"
 
 namespace llvm {
@@ -40,11 +40,11 @@ private:
   // should return AllocaInst or GlobalVariable
   void registerPointer(AllocaInst *AllocaI, PointerType *PtrTy) ;
   void registerArray(AllocaInst *AllocaI, ArrayType *ArrTy)  ;
-  void propagatePointers(Instruction &I) ;
+  void updatePointer(StoreInst *StoreI) ;
   void checkStore(Instruction &I) ;
   void checkSequentialWrite(Instruction &I) ;
   void writeCheckCode(Instruction *I, Value* FatPtr, Value* Ptr, uint64_t offset= 0);
-  Value* getDefinition(Value *V) ; 
+  Value* getDeclaration(Value *V) ; 
 
 
 }; // SoftboundPass end

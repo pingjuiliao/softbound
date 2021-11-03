@@ -17,9 +17,10 @@ void _softbound_check(unsigned ptr_id, uint8_t* ptr) {
     printf("[%p, %p), but ptr: %p\n", base, bound, ptr) ;
     _softbound_abort() ;
 }
-void _softbound_propagate(unsigned dst_ptr_id, unsigned src_ptr_id) {
+void _softbound_update(unsigned dst_ptr_id, unsigned src_ptr_id) {
     LookupTable[dst_ptr_id].ptr_base  = LookupTable[src_ptr_id].ptr_base  ;
     LookupTable[dst_ptr_id].ptr_bound = LookupTable[src_ptr_id].ptr_bound ;
+    puts("Updating pointer") ;
 }
 
 void _softbound_abort(void) {

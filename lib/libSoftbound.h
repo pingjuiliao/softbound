@@ -21,7 +21,7 @@ FatPointer LookupTable[NUM_PTR_MAX] ;
 
 void _softbound_register(unsigned ptr_id, uint8_t* base, uint8_t* bound) ; 
 void _softbound_check(unsigned ptr_id, uint8_t* ptr) ;
-void _softbound_propagate(unsigned dst_ptr_id, unsigned src_ptr_id) ;
+void _softbound_update(unsigned dst_ptr_id, unsigned src_ptr_id) ;
 void _softbound_abort(void) ;
 
 

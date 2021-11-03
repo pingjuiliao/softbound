@@ -13,5 +13,7 @@ a-debug: a-dis
 	$(OPT) -passes=softbound -disable-output a.ll -debug-pass-manager
 a-dis: test-suite/a.c
 	$(CC) -m64 -O2 -S -emit-llvm -o ./a.ll test-suite/a.c
+libSoftbound: 
+	clang++ -shared -o ./lib/libSoftbound.so ./lib/libSoftbound.cpp
 clean:
 	rm *.bc *.ll *.exe 

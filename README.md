@@ -10,7 +10,6 @@ a function pass, using the new pass manager
 ## to build shared library ( REQUIRED )
 ```
 ## build our libSoftbound.so first
-cd lib 
 make 
 ```
 

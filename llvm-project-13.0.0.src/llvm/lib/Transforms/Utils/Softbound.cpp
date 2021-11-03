@@ -40,14 +40,14 @@ bool SoftboundPass::initializeLinkage(Module* M) {
                 SOFTBOUND_REGISTER, M) ;
     }
     
-    // SOFTBOUND_PROPAGATE
-    Function *PFP = M->getFunction(SOFTBOUND_PROPAGATE) ;
-    if ( !PFP ) {
+    // SOFTBOUND_UPDATE
+    Function *UFP = M->getFunction(SOFTBOUND_UPDATE) ;
+    if ( !UFP ) {
         FunctionType *FnTy = FunctionType::get(Type::getVoidTy(Ctx), true) ;
-        PFP = Function::Create(FnTy, 
+        UFP = Function::Create(FnTy, 
                 GlobalValue::ExternalLinkage, 
                 M->begin()->getAddressSpace(), 
-                SOFTBOUND_PROPAGATE, M) ;
+                SOFTBOUND_UPDATE, M) ;
 
     }
     
@@ -55,7 +55,7 @@ bool SoftboundPass::initializeLinkage(Module* M) {
     Function *CFP = M->getFunction(SOFTBOUND_CHECK) ;
     if ( !CFP ) {
         FunctionType *FnTy = FunctionType::get(Type::getVoidTy(Ctx), true) ;
-        PFP = Function::Create(FnTy, 
+        UFP = Function::Create(FnTy, 
                 GlobalValue::ExternalLinkage, 
                 M->begin()->getAddressSpace(),
                 SOFTBOUND_CHECK, M);
@@ -83,7 +83,12 @@ void SoftboundPass::harvestPointers(Function &F) {
             // TODO: global variable
 
             // TODO: function argument
-            // TODO: Propagate 
+            
+            // Propagate/update 
+            if ( auto StoreI = dyn_cast<StoreInst>(&I) ) {
+                errs() << "Suspictious pointer: " << *StoreI << "\n" ;
+                updatePointer(StoreI) ;     
+            }
         }
     }
 }
@@ -144,30 +149,55 @@ void SoftboundPass::checkPointers(Function &F) {
 }
 
 
-void SoftboundPass::propagatePointers(Instruction &I) {
+void SoftboundPass::updatePointer(StoreInst *StoreI) {
+    Module* M = StoreI->getFunction()->getParent() ;
+
+    // ************************
+    // 1. get DstPtrID: the pointer should be updated
+    // ************************
+
+    // check if it's our registered pointer
+    Value* LoadPtrVal = StoreI->getOperand(1) ;
+    auto LoadPtrInst  = dyn_cast<Instruction>(LoadPtrVal) ;
+    // the instruction loads pointers before the store (StoreI)
+    if ( !LoadPtrInst || !LoadPtrInst->getNumOperands() ) {
+        errs() << "[EXCEPTION] store inst does not have an instuction" 
+               << " to load pointers\n" ;
+        return ;
+    }
+    errs() << *LoadPtrInst << " is LoadPtrInst \n" ;
+    // assume it's always GEP
+    Value* DstPtr = LoadPtrInst->getOperand(0) ;
+    if ( !DstPtr->getType()->isPointerTy() ) 
+        return ;
+    if ( PointerIDMap.find(DstPtr) == PointerIDMap.end() )
+        return ;
+    unsigned DstPtrID = PointerIDMap[DstPtr] ; 
     
-    Module *M = I.getFunction()->getParent() ;
-
-    bool IsPtrTy = I.getType()->isPtrOrPtrVectorTy() ;
-    bool IsArrTy = I.getType()->isArrayTy() ;
-    if ( !IsPtrTy && !IsArrTy  ) return ;
+    errs() << "DstPointer Found " << *DstPtr ;
+    // ***********************
+    // 2. get SrcPtrID: the pointer 
+    // ***********************
+    Value* LoadValVal = StoreI->getOperand(0) ;
+    if ( !LoadValVal->getType()->isPointerTy() ) 
+        return ;
     
-    if ( !I.getNumOperands() ) return ; // no operands...
+    Value* SrcPtr = getDeclaration(LoadValVal) ;
+    if ( !SrcPtr->getType()->isPointerTy() || 
+            SrcPtr->getType()->isArrayTy() ) 
+        return ;
+    if ( PointerIDMap.find(SrcPtr) == PointerIDMap.end() ) 
+        return ;
+    unsigned SrcPtrID = PointerIDMap[SrcPtr] ;
 
-    // GEP, BitCast, ....
-    Value* Op0 = I.getOperand(0) ;
-    if ( PointerIDMap.find(Op0) == PointerIDMap.end() ) return ;
+    errs() << "\n\nSOFTBOUND-Updating Pointer " << *StoreI ;  
 
-    errs() << I << " pass should be propagated\n" ;
     // propagate
-    IRBuilder<> IRB(I.getNextNode()) ;
-    ConstantInt* DstPtrID = IRB.getInt32(AssignedID) ;
-    ConstantInt* SrcPtrID = IRB.getInt32(PointerIDMap[Op0]) ;
-    Function* PFP = M->getFunction(SOFTBOUND_PROPAGATE) ;
-    IRB.CreateCall(PFP->getFunctionType(), PFP, 
-                    {DstPtrID, SrcPtrID}) ;
-    PointerIDMap[ &I ] = AssignedID ;
-    AssignedID ++ ;
+    IRBuilder<> IRB(LoadPtrInst->getNextNode()) ;
+    ConstantInt* DstPtrIDCI = IRB.getInt32(DstPtrID) ;
+    ConstantInt* SrcPtrIDCI = IRB.getInt32(SrcPtrID) ;
+    Function* UFP = M->getFunction(SOFTBOUND_UPDATE) ;
+    IRB.CreateCall(UFP->getFunctionType(), UFP, {DstPtrIDCI, SrcPtrIDCI}) ;
 
 }
 void SoftboundPass::checkStore(Instruction &I) {
@@ -175,9 +205,9 @@ void SoftboundPass::checkStore(Instruction &I) {
     if ( !StoreI ) return ;
 
     // assert(StoreI->getNumOperands() >= 2 ) ;
-    errs() << "SOFTBOUND-Checking StoreInst " << *StoreI << "\n" ;
+    errs() << "\n\nSOFTBOUND-Checking StoreInst " << *StoreI << "\n" ;
     Value* DstPtr = StoreI->getOperand(1) ; // GEP? 
-    Value* DefinedPtr = getDefinition(DstPtr) ;
+    Value* DefinedPtr = getDeclaration(DstPtr) ;
     writeCheckCode(StoreI, DefinedPtr, DstPtr) ;
 
 }
@@ -218,7 +248,7 @@ void SoftboundPass::checkSequentialWrite(Instruction &I) {
         errs() << "\nSOFTBOUND-Checking CallInst" << *CallI << "\n" ;
         // Dst 
         Value* DstPtr = CallI->getOperand(0) ; 
-        Value* DefinedPtr = getDefinition(DstPtr) ;  
+        Value* DefinedPtr = getDeclaration(DstPtr) ;  
         // Size
         auto CpySize = dyn_cast<ConstantInt>(CallI->getOperand(2)) ;
         if ( !CpySize || !CpySize->getType()->isIntegerTy() ) {
@@ -234,7 +264,7 @@ void SoftboundPass::checkSequentialWrite(Instruction &I) {
     }
 }
 
-Value* SoftboundPass::getDefinition(Value* V) {
+Value* SoftboundPass::getDeclaration(Value* V) {
 
     Value* Ptr = V ;
     while ( !isa<AllocaInst>(Ptr) ) {
