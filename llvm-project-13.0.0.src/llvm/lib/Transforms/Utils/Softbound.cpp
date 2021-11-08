@@ -86,8 +86,8 @@ void SoftboundPass::harvestPointers(Function &F) {
             
             // Propagate/update 
             if ( auto StoreI = dyn_cast<StoreInst>(&I) ) {
-                errs() << "Suspictious pointer: " << *StoreI << "\n" ;
-                updatePointer(StoreI) ;     
+                // errs() << "Suspictious pointer: " << *StoreI << "\n" ;
+                // updatePointer(StoreI) ;     
             }
         }
     }
@@ -139,11 +139,18 @@ void SoftboundPass::registerPointer(AllocaInst *AllocaI, PointerType *PtrTy) {
 
 }
 void SoftboundPass::checkPointers(Function &F) {
+    // two style: 
+    // 1) check each dereference
+    // 2) check dereferences that use write operation
+
     for ( auto &BB: F ) {
         for ( auto &I: BB ) {
+            
+            // check dereferences
+            checkDereference(I) ;
             // memcpy, strcpy
             checkSequentialWrite(I) ;
-            checkStore(I) ;
+
         }
     }
 }
@@ -200,17 +207,26 @@ void SoftboundPass::updatePointer(StoreInst *StoreI) {
     IRB.CreateCall(UFP->getFunctionType(), UFP, {DstPtrIDCI, SrcPtrIDCI}) ;
 
 }
-void SoftboundPass::checkStore(Instruction &I) {
-    auto *StoreI = dyn_cast<StoreInst>(&I) ;
-    if ( !StoreI ) return ;
 
-    // assert(StoreI->getNumOperands() >= 2 ) ;
-    errs() << "\n\nSOFTBOUND-Checking StoreInst " << *StoreI << "\n" ;
-    Value* DstPtr = StoreI->getOperand(1) ; // GEP? 
-    Value* DefinedPtr = getDeclaration(DstPtr) ;
-    writeCheckCode(StoreI, DefinedPtr, DstPtr) ;
+
+void SoftboundPass::checkDereference(Instruction &I) {
+    // GEP: Get Element Pointer
+    // LLVM tends to use this for every dereferences
+    auto GEP = dyn_cast<GetElementPtrInst>(&I) ;
+    if ( !GEP ) 
+        return ;
+
+
+    if ( !GEP->getNumOperands() ) {
+        errs() << "GEP no operands\n" ;
+        return ;
+    }
+    
+    
+    writeCheckCodeAfter(GEP, 0);
 
 }
+
 
 
 // Place a check before { strcpy, strncpy, memcpy, memset } 
@@ -238,6 +254,7 @@ void SoftboundPass::checkSequentialWrite(Instruction &I) {
 
     if ( !ShouldBeChecked )
         return ;
+    // TODO :change this condition
     if ( !FnName.contains("strcpy")) {
         // These function follows the Fn(dst, src, size) format
         // Dst : if it's in our FatPointer lookup table, check!
@@ -248,7 +265,7 @@ void SoftboundPass::checkSequentialWrite(Instruction &I) {
         errs() << "\nSOFTBOUND-Checking CallInst" << *CallI << "\n" ;
         // Dst 
         Value* DstPtr = CallI->getOperand(0) ; 
-        Value* DefinedPtr = getDeclaration(DstPtr) ;  
+        // Value* DefinedPtr = getDeclaration(DstPtr) ;  
         // Size
         auto CpySize = dyn_cast<ConstantInt>(CallI->getOperand(2)) ;
         if ( !CpySize || !CpySize->getType()->isIntegerTy() ) {
@@ -258,9 +275,11 @@ void SoftboundPass::checkSequentialWrite(Instruction &I) {
         // [dst, dst+size) or [dst, dst+size-1]
         uint64_t u64Size = CpySize->getZExtValue() - 1 ;
 
-        writeCheckCode(CallI, DefinedPtr, DstPtr, u64Size);
-        errs() << FnName << " CHECK " << *DefinedPtr << "!!!\n" ;
-         
+        auto GEP = dyn_cast<GetElementPtrInst>(DstPtr);
+        if ( !GEP ) 
+            return ;
+        writeCheckCodeAfter(GEP, u64Size);
+        // errs() << FnName << " CHECK " << *DefinedPtr << "!!!\n" ;
     }
 }
 
@@ -283,7 +302,8 @@ Value* SoftboundPass::getDeclaration(Value* V) {
         Value* NextV ;
         if ( isa<PHINode>(PtrU) ) {
             // TODO: this value (Op1) may not be correct
-            NextV = PtrU->getOperand(1) ;
+            return nullptr ;
+            // NextV = PtrU->getOperand(1) ;
         } else {
             NextV = PtrU->getOperand(0) ; // bitcast, GEP 
         }
@@ -296,8 +316,8 @@ Value* SoftboundPass::getDeclaration(Value* V) {
     return Ptr ;
 }
 
-
-void SoftboundPass::writeCheckCode(Instruction *I, Value* FatPtr, Value* AccessPtr, uint64_t offset) {
+void SoftboundPass::writeCheckCodeBefore(Instruction *I, Value* FatPtr, Value* AccessPtr, uint64_t offset) {
+    
     
     if ( PointerIDMap.find(FatPtr) == PointerIDMap.end() ) {
         errs() << "Cannot place check before: " << *I \
@@ -310,7 +330,12 @@ void SoftboundPass::writeCheckCode(Instruction *I, Value* FatPtr, Value* AccessP
         errs() << "AccessPtr is not a instruction\n" ;
         return ;
     }
-    
+
+    auto GEP = dyn_cast<GetElementPtrInst>(AccessPtr);
+    if ( !GEP ) 
+        return ;
+    writeCheckCodeAfter(GEP, offset) ;
+    /*
     Module *M = I->getFunction()->getParent() ; 
     Function *CFP = M->getFunction(SOFTBOUND_CHECK) ; 
     // Don't use IRBuilder<> IRB(I->getPrevNode()) ;
@@ -329,7 +354,35 @@ void SoftboundPass::writeCheckCode(Instruction *I, Value* FatPtr, Value* AccessP
     Value* NewPtr   = IRB.CreateIntToPtr(AddedPtr, IRB.getInt8PtrTy()) ;
     // SOFTBOUND_CHECK(ptr_id, ptr) ;
     IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, NewPtr} );
-
+    */
 }
 
+void SoftboundPass::writeCheckCodeAfter(GetElementPtrInst* GEP, uint64_t offset) {
+
+
+    // global settings
+    Module* M = GEP->getFunction()->getParent() ;
+    Function* CFP = M->getFunction(SOFTBOUND_CHECK) ;
+    
+    // resources from GEP
+    Value* Ptr = GEP->getPointerOperand() ;
+    if ( PointerIDMap.find(Ptr) == PointerIDMap.end() ) {
+        errs() << "Unregistered pointer found: " << *GEP << "\n" ;
+        return ;
+    }
+
+    IRBuilder<> IRB(GEP->getNextNode());
+    ConstantInt* PtrID = IRB.getInt32(PointerIDMap[Ptr]) ;
+
+    if ( !offset ) {
+        IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, GEP}) ;
+        return ;
+    }
+    Value* Int64Ptr = IRB.CreatePtrToInt(GEP, IRB.getInt64Ty()) ;
+    Value* AddedPtr = IRB.CreateAdd(Int64Ptr, IRB.getInt64(offset)) ;
+    Value* OffsetPtr= IRB.CreateIntToPtr(AddedPtr, IRB.getInt8PtrTy()) ;
+    // SOFTBOUND_CHECK(ptr_id, ptr);
+    IRB.CreateCall(CFP->getFunctionType(), CFP, {PtrID, OffsetPtr}); 
+
+}
 

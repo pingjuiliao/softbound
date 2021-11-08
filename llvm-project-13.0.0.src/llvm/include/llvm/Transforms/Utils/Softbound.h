@@ -41,9 +41,10 @@ private:
   void registerPointer(AllocaInst *AllocaI, PointerType *PtrTy) ;
   void registerArray(AllocaInst *AllocaI, ArrayType *ArrTy)  ;
   void updatePointer(StoreInst *StoreI) ;
-  void checkStore(Instruction &I) ;
+  void checkDereference(Instruction &GEPInst) ;
   void checkSequentialWrite(Instruction &I) ;
-  void writeCheckCode(Instruction *I, Value* FatPtr, Value* Ptr, uint64_t offset= 0);
+  void writeCheckCodeAfter(GetElementPtrInst *GEP, uint64_t offset) ;
+  void writeCheckCodeBefore(Instruction *I, Value* FatPtr, Value* Ptr, uint64_t offset );
   Value* getDeclaration(Value *V) ; 
 
 
