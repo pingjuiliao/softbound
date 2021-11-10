@@ -14,13 +14,18 @@ import py_common
 
 import update_main_cpp_and_testcases_h
 
+SOFTBOUND_ROOT     = '/'.join(os.path.abspath(__file__).split('/')[:-2])
+SOFTBOUND_LIB_PATH = SOFTBOUND_ROOT + "/lib"
+SOFTBOUND_BIN      = SOFTBOUND_ROOT  + "/llvm-project-13.0.0.src/build/bin"
+SOFTBOUND_CC       = SOFTBOUND_BIN  + "/clang"
+
 def create_makefile(cwe, is_dir_split):
 	contents = ""
-	contents += "CC=/usr/bin/gcc\n"
-	contents += "CPP=/usr/bin/g++\n"
+	contents += "CC=%s\n" % SOFTBOUND_CC
+	contents += "CPP=clang++\n"
 	contents += "DEBUG=-g\n"
 	contents += "CFLAGS=-c\n"
-	contents += "LFLAGS=-lpthread -lm\n"
+	contents += "LFLAGS=-lpthread -lm -L%s -lSoftbound -Wl,-rpath,%s\n" % (SOFTBOUND_LIB_PATH, SOFTBOUND_LIB_PATH)
 	contents += "LD=ld\n"
 	contents += "INCLUDE_MAIN=-DINCLUDEMAIN\n"
 
