@@ -25,7 +25,7 @@ def create_makefile(cwe, is_dir_split):
 	contents += "CPP=clang++\n"
 	contents += "DEBUG=-g\n"
 	contents += "CFLAGS=-c\n"
-	contents += "LFLAGS=-lpthread -lm -L%s -lSoftbound -Wl,-rpath,%s\n" % (SOFTBOUND_LIB_PATH, SOFTBOUND_LIB_PATH)
+	contents += "LFLAGS=-O1 -lpthread -lm -L%s -lSoftbound -Wl,-rpath,%s\n" % (SOFTBOUND_LIB_PATH, SOFTBOUND_LIB_PATH)
 	contents += "LD=ld\n"
 	contents += "INCLUDE_MAIN=-DINCLUDEMAIN\n"
 
