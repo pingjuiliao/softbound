@@ -11,8 +11,8 @@ a: a-dis ./lib/libSoftbound.so
 	$(CC) -o a.exe -L./lib -lSoftbound -Wl,-rpath,./lib  a.bc
 a-debug: a-dis
 	$(OPT) -passes=softbound -disable-output a.ll -debug-pass-manager
-a-dis: test-suite/a.c
-	$(CC) -m64 -O2 -S -emit-llvm -o ./a.ll test-suite/a.c
+a-dis: sample/a.c
+	$(CC) -m64 -O2 -S -emit-llvm -o ./a.ll sample/a.c
 libSoftbound: 
 	clang++ -shared -o ./lib/libSoftbound.so ./lib/libSoftbound.cpp
 clean:
