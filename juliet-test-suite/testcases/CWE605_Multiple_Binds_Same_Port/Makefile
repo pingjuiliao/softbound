@@ -2,7 +2,7 @@ CC=/home/pingjui/softbound/llvm-project-13.0.0.src/build/bin/clang
 CPP=clang++
 DEBUG=-g
 CFLAGS=-c
-LFLAGS=-lpthread -lm -L/home/pingjui/softbound/lib -lSoftbound -Wl,-rpath,/home/pingjui/softbound/lib
+LFLAGS=-O1 -lpthread -lm -L/home/pingjui/softbound/lib -lSoftbound -Wl,-rpath,/home/pingjui/softbound/lib
 LD=ld
 INCLUDE_MAIN=-DINCLUDEMAIN
 
