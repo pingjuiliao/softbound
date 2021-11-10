@@ -11,7 +11,7 @@ LIBSOFTBOUND=-L../lib -lSoftbound -Wl,-rpath,../lib
 tests := test_arbitW.exe test_runtime.exe test_strncpy.exe
 tests += test_forloop.exe
 
-.PHONY: all
+.PHONY: all use-clang
 
 
 all: $(tests)
@@ -21,5 +21,7 @@ all: $(tests)
 	$(OPT) -passes=softbound -o $@ $<
 %.ll: %.c
 	$(CC) ${EMIT_LLVM_FLAG} -o $@ $<
+use-clang: test_forloop.c
+	$(CC) -O1 ${LIBSOFTBOUND} -o clang_forloop.exe $<
 clean: 
 	rm $(wildcard *.exe)

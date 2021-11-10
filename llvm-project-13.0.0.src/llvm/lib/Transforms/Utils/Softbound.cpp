@@ -13,10 +13,11 @@ using namespace llvm;
 PreservedAnalyses SoftboundPass::run(Function &F, FunctionAnalysisManager &AM) {
 
     static bool HasInit = false ;
-    if ( !HasInit ) 
+    if ( !HasInit ) {
         HasInit = initializeLinkage(F.getParent()) ; 
-    harvestPointers(F) ;
-    checkPointers(F) ;
+        harvestPointers(F) ;
+        checkPointers(F) ;
+    }
 
     return PreservedAnalyses::all();
 }
