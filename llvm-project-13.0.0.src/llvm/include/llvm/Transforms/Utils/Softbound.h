@@ -39,12 +39,14 @@ private:
   // should return AllocaInst or GlobalVariable
   
   // register
-  void registerAllocatedPointer(AllocaInst *AllocaI, PointerType *PtrTy) ;
-  void registerArray(AllocaInst *AllocaI, ArrayType *ArrTy)  ;
-  void registerGlobalArray(GlobalVariable *GV, ArrayType *ArrTy)  ;
+  void registerArray(AllocaInst*, ArrayType*)  ;
+  void registerGlobalArray(GlobalVariable*, ArrayType*, Function*)  ;
+  void registerAllocatedPointer(AllocaInst*, PointerType*) ;
+  void registerGlobalPointer(GlobalVariable *, PointerType *, Function*) ;
   void registerHeapAlloc(Instruction *I) ;
-  void registerPHINode(PHINode *PHI) ;
+  void registerAndUpdatePHINode(PHINode *PHI) ;
   // update
+  void updateOnStore(StoreInst *StoreI) ; // unused (aggressive)
   void writeUpdateCodeAfter(Instruction* I, unsigned DstID) ;  
   // void writeReallocCodeAfter(Instruction *I) ;
   // check
@@ -54,7 +56,6 @@ private:
   void writeCheckCodeAfter(GetElementPtrInst *GEP, Value* SizeVal) ;
   
   Value* getDeclaration(Value *V) ; 
-  void updateStoreToPointer(StoreInst *StoreI) ; // unused (aggressive)
 
 
 }; // SoftboundPass end

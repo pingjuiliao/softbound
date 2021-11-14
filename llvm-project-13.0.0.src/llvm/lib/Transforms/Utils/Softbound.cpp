@@ -91,7 +91,7 @@ void SoftboundPass::registerPointers(Function &F) {
             registerHeapAlloc(&I) ;
             // 1-d) phinode
             if ( auto PHI = dyn_cast<PHINode>(&I) ) 
-                registerPHINode(PHI) ;
+                registerAndUpdatePHINode(PHI) ;
             // 2) global variable
             for ( auto &Val: I.operands() ) {
                 auto GV = dyn_cast<GlobalVariable>(&Val) ;
@@ -102,15 +102,24 @@ void SoftboundPass::registerPointers(Function &F) {
                 if ( GVTy->isArrayTy() ) { 
                     auto ArrTy = dyn_cast<ArrayType>(GVTy);
                     errs() << "[GlobalValArr] "<< *GV << "\n" ;
-                    registerGlobalArray(GV, ArrTy) ;
-                } /*else if ( GVTy->isPointerTy() ) {
+                    registerGlobalArray(GV, ArrTy, &F) ;
+                } else if ( GVTy->isPointerTy() ) {
                     auto PtrTy = dyn_cast<PointerType>(GVTy) ;
-                    registerAllocatedPointer(GV, PtrTy) ;
-                }*/
+                    registerGlobalPointer(GV, PtrTy, &F) ;
+                }  
             } 
         }
     }
-    //  2) global variables   TODO
+    
+    for ( auto &BB: F ) {
+        for ( auto &I: BB ) {
+            // PHINode also updates on its incoming values
+            if ( auto PHI = dyn_cast<PHINode>(&I) ) 
+                registerAndUpdatePHINode(PHI) ;
+            if ( auto StoreI = dyn_cast<StoreInst>(&I) ) 
+                updateOnStore(StoreI);
+        }
+    }
     //  3) function arguments TODO
     
 }
@@ -166,26 +175,25 @@ void SoftboundPass::registerArray(AllocaInst *AllocaI, ArrayType *ArrTy) {
 }
 
 
-void SoftboundPass::registerGlobalArray(GlobalVariable* GV, ArrayType *ArrTy) {
+void SoftboundPass::registerGlobalArray(GlobalVariable* GV, ArrayType *ArrTy, Function *F) {
 
     
     // and it's element must have size ( hardly not true )
     Type* ElemTy = ArrTy->getElementType() ;
     if ( !ElemTy->isSized() ) return;
     
-    // return if already registered
-    if ( PointerIDMap.find(GV) != PointerIDMap.end() ) 
-        return ; 
     
     // Ready to write code, setup first
     Module* M = GV->getParent() ;
     DataLayout DL = M->getDataLayout() ; //used for type size
-    Function *MainF=M->getFunction("main");
+    // Function *MainF=M->getFunction("main");
     // write code
 
-    IRBuilder<> IRB(MainF->getEntryBlock().getFirstNonPHI()) ;
-    PointerIDMap[ GV ] = AssignedID ;
-    AssignedID ++ ;
+    IRBuilder<> IRB(F->getEntryBlock().getFirstNonPHI()) ;
+    if ( PointerIDMap.find(GV) == PointerIDMap.end() ) {
+        PointerIDMap[ GV ] = AssignedID ;
+        AssignedID ++ ;
+    }
     ConstantInt *PtrID = IRB.getInt32( PointerIDMap[ GV ] ) ; 
     Value* PtrBase = IRB.CreateBitCast(GV, IRB.getInt8PtrTy()) ;
     Value* IntBase = IRB.CreatePtrToInt(PtrBase, IRB.getInt64Ty()) ;
@@ -204,8 +212,8 @@ void SoftboundPass::registerGlobalArray(GlobalVariable* GV, ArrayType *ArrTy) {
 void SoftboundPass::registerAllocatedPointer(AllocaInst *AllocaI, PointerType *PtrTy) {
 
     Module* M = AllocaI->getFunction()->getParent() ;
-    DataLayout DL = M->getDataLayout() ;
-
+    
+        
     // write code
     IRBuilder<> IRB(AllocaI->getNextNode()) ;
     PointerIDMap[AllocaI] = AssignedID ;
@@ -215,6 +223,26 @@ void SoftboundPass::registerAllocatedPointer(AllocaInst *AllocaI, PointerType *P
     Function* RFP = M->getFunction(SOFTBOUND_REGISTER) ;
     IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrNull, PtrNull}) ;
 }
+
+
+void SoftboundPass::registerGlobalPointer(GlobalVariable *GV, 
+        PointerType *PtrTy, Function *F) { 
+    Module* M = GV->getParent() ;
+    
+
+    // write code
+    IRBuilder<> IRB(F->getEntryBlock().getFirstNonPHI()) ;
+    if ( PointerIDMap.find(GV) == PointerIDMap.end() ) {
+        PointerIDMap[ GV ] = AssignedID ;
+        AssignedID ++ ;
+    }
+    ConstantInt *PtrID = IRB.getInt32( PointerIDMap[ GV ] ) ;
+    Value* PtrNull = IRB.CreateIntToPtr(IRB.getInt64(0), IRB.getInt8PtrTy());
+    Function* RFP  = M->getFunction(SOFTBOUND_REGISTER) ;
+    IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrNull, PtrNull});
+    
+}
+
 
 void SoftboundPass::registerHeapAlloc(Instruction *I) {
 
@@ -264,7 +292,7 @@ void SoftboundPass::registerHeapAlloc(Instruction *I) {
 
 }
 
-void SoftboundPass::registerPHINode(PHINode* PHI) {
+void SoftboundPass::registerAndUpdatePHINode(PHINode* PHI) {
     
     Function* F = PHI->getFunction() ;
     Module*   M = F->getParent() ;
@@ -290,11 +318,75 @@ void SoftboundPass::registerPHINode(PHINode* PHI) {
     for ( auto &Op: PHI->incoming_values() ) {
         auto OpI = dyn_cast<Instruction>(&Op) ;
         if ( !OpI ) { 
-            errs() << "registerPHINode: operands not a instruction\n" ;
+            errs() << "registerAndUpdatePHINode: operands not a instruction\n" ;
             continue ;
         }
         writeUpdateCodeAfter(OpI, PointerIDMap[ PHI ]) ;
     }
+}
+
+void SoftboundPass::updateOnStore(StoreInst *StoreI) {
+
+    // ************************
+    // 1. get DstPtrID: the pointer should be updated
+    // ************************
+
+    // check if it's our registered pointer
+    if ( StoreI->getNumOperands() < 2 ) {
+        errs() << *StoreI << "has not 2nd operands....\n" ;
+        return ;
+    }
+    Value* LoadDstPtr = StoreI->getOperand(1) ;
+    // the instruction loads pointers before the store (StoreI)
+    /*if ( !LoadDstPtrInst || !LoadDstPtrInst->getNumOperands() ) {
+        errs() << "[EXCEPTION] store inst does not have an instuction" 
+               << " to load pointers : \n" 
+               << *LoadDstPtr << "\n" ;
+        return ;
+    }*/
+    if ( !LoadDstPtr ) {
+        errs() << "updateOnStore: StoreInst operands(1) is nothing\n" ;
+        return ;
+    }
+    // assume it's always GEP
+    Value* DstPtr = getDeclaration(LoadDstPtr) ;
+    if ( !DstPtr ) {
+        errs() << "updateOnStore: cannot retrieve declaration for StoreInst\n";
+        return ;
+    }
+    errs() << *StoreI << " is a Store that should be updated\n" ;
+    if ( PointerIDMap.find(DstPtr) == PointerIDMap.end() )
+        return ;
+    unsigned DstPtrID = PointerIDMap[DstPtr] ; 
+    
+
+    // ***********************
+    // 2. get SrcPtrID: the pointer 
+    // ***********************
+    writeUpdateCodeAfter(StoreI, DstPtrID);
+    /*
+    Value* LoadValVal = StoreI->getOperand(0) ;
+    if ( !LoadValVal->getType()->isPointerTy() ) 
+        return ;
+    
+    Value* SrcPtr = getDeclaration(LoadValVal) ;
+    if ( !SrcPtr->getType()->isPointerTy() || 
+            SrcPtr->getType()->isArrayTy() ) 
+        return ;
+    if ( PointerIDMap.find(SrcPtr) == PointerIDMap.end() ) 
+        return ;
+    unsigned SrcPtrID = PointerIDMap[SrcPtr] ;
+
+    errs() << "\n\nSOFTBOUND-Updating Pointer " << *StoreI ;  
+*/
+    // propagate
+    /*
+    IRBuilder<> IRB(LoadDstPtrInst->getNextNode()) ;
+    ConstantInt* DstPtrIDCI = IRB.getInt32(DstPtrID) ;
+    ConstantInt* SrcPtrIDCI = IRB.getInt32(SrcPtrID) ;
+    Function* UFP = M->getFunction(SOFTBOUND_UPDATE) ;
+    IRB.CreateCall(UFP->getFunctionType(), UFP, {DstPtrIDCI, SrcPtrIDCI}) ;
+    */
 }
 
 
@@ -302,33 +394,40 @@ void SoftboundPass::writeUpdateCodeAfter(Instruction *I,
                                                       unsigned DstID) {
     // global settings
     Module* M = I->getFunction()->getParent() ;
-    
-    auto GEP = dyn_cast<GetElementPtrInst>(I) ;
-    if ( !GEP ) {
-        errs() << "Anther Inst to overwrite pointers/arrays\n" ;
+        
+    if ( !isa<GetElementPtrInst>(I) && !isa<StoreInst>(I) ) {
+            
+        errs() << "Another Inst to overwrite pointers/arrays\n" ;
         errs() << "writeUpdateCodeAfter: " << *I << "failed\n" ;
         return ;
     }
-    
-    if ( !GEP->getNumOperands() ) {
-        errs() << "error: GEP has no opereands\n" ;
-        return ;
+
+    if ( !I->getNumOperands() ) {
+        errs() << *I << " has no operands on UPDATE\n" ;
+        return; 
     }
 
-    Value* SrcPtr = getDeclaration(GEP->getOperand(0)) ; 
+
+    Value* SrcPtr = getDeclaration(I->getOperand(0)) ; 
+    if ( !SrcPtr ) {
+        errs() << "writeUpdateCodeAfter: " \
+               << "Cannot find source pointer for " << I->getOperand(0) 
+               << "\n" ;
+        return ; 
+    }
+
     if ( PointerIDMap.find(SrcPtr) == PointerIDMap.end() ) {
         errs() << "writeUpdateCodeAfter: "
-               << " cannot find source pointer for " << *SrcPtr 
-               << "\n" ;
+               << *SrcPtr << " is not registered \n" ;
         return ;
     }
 
-    IRBuilder<> IRB(GEP->getNextNode()) ;
-    Value* SrcPtrID = IRB.getInt32(PointerIDMap[SrcPtr]) ; 
-    Value* DstPtrID = IRB.getInt32(DstID) ;
-    Function* UFP = M->getFunction(SOFTBOUND_UPDATE) ;
+    IRBuilder<> IRB(I->getNextNode()) ;
+    Value* SrcPtrID = IRB.getInt32( PointerIDMap[SrcPtr] ) ; 
+    Value* DstPtrID = IRB.getInt32( DstID ) ;
+    Function* UFP = M->getFunction( SOFTBOUND_UPDATE ) ;
     IRB.CreateCall(UFP->getFunctionType(), UFP, {DstPtrID, SrcPtrID}) ;
-    errs() << "[UPDATE Code] success : " << *GEP << "\n" ;
+    errs() << "[UPDATE Code] success : " << *I << "\n" ;
 
 }
 
@@ -475,57 +574,4 @@ void SoftboundPass::writeCheckCodeAfter(GetElementPtrInst* GEP, Value* SizeVal) 
 
 
 
-
-void SoftboundPass::updateStoreToPointer(StoreInst *StoreI) {
-    Module* M = StoreI->getFunction()->getParent() ;
-
-    // ************************
-    // 1. get DstPtrID: the pointer should be updated
-    // ************************
-
-    // check if it's our registered pointer
-    Value* LoadPtrVal = StoreI->getOperand(1) ;
-    auto LoadPtrInst  = dyn_cast<Instruction>(LoadPtrVal) ;
-    // the instruction loads pointers before the store (StoreI)
-    if ( !LoadPtrInst || !LoadPtrInst->getNumOperands() ) {
-        errs() << "[EXCEPTION] store inst does not have an instuction" 
-               << " to load pointers\n" ;
-        return ;
-    }
-    errs() << *LoadPtrInst << " is LoadPtrInst \n" ;
-    // assume it's always GEP
-    Value* DstPtr = LoadPtrInst->getOperand(0) ;
-    if ( !DstPtr->getType()->isPointerTy() ) 
-        return ;
-    if ( PointerIDMap.find(DstPtr) == PointerIDMap.end() )
-        return ;
-    unsigned DstPtrID = PointerIDMap[DstPtr] ; 
-    
-    errs() << "DstPointer Found " << *DstPtr ;
-
-    // ***********************
-    // 2. get SrcPtrID: the pointer 
-    // ***********************
-    Value* LoadValVal = StoreI->getOperand(0) ;
-    if ( !LoadValVal->getType()->isPointerTy() ) 
-        return ;
-    
-    Value* SrcPtr = getDeclaration(LoadValVal) ;
-    if ( !SrcPtr->getType()->isPointerTy() || 
-            SrcPtr->getType()->isArrayTy() ) 
-        return ;
-    if ( PointerIDMap.find(SrcPtr) == PointerIDMap.end() ) 
-        return ;
-    unsigned SrcPtrID = PointerIDMap[SrcPtr] ;
-
-    errs() << "\n\nSOFTBOUND-Updating Pointer " << *StoreI ;  
-
-    // propagate
-    IRBuilder<> IRB(LoadPtrInst->getNextNode()) ;
-    ConstantInt* DstPtrIDCI = IRB.getInt32(DstPtrID) ;
-    ConstantInt* SrcPtrIDCI = IRB.getInt32(SrcPtrID) ;
-    Function* UFP = M->getFunction(SOFTBOUND_UPDATE) ;
-    IRB.CreateCall(UFP->getFunctionType(), UFP, {DstPtrIDCI, SrcPtrIDCI}) ;
-
-}
 
