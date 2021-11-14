@@ -9,6 +9,7 @@
 #define LLVM_TRANSFORMS_UTILS_SOFTBOUND_H
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/DataLayout.h"
@@ -25,27 +26,33 @@ public:
   typedef unsigned PointerID;
   PointerID AssignedID ;
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
-  // static bool isRequired() { return true;  } 
+  static bool isRequired() { return true;  } 
   SmallMapVector<Value*, PointerID, 0x100> PointerIDMap ;
-
 private:
 
   // the main body of this passes
   bool initializeLinkage(Module *M) ;
-  void harvestPointers(Function &F) ;
+  void registerPointers(Function &F) ;
   void checkPointers(Function &F) ;
   
   // helpers
   
   // should return AllocaInst or GlobalVariable
-  void registerPointer(AllocaInst *AllocaI, PointerType *PtrTy) ;
+  
+  // register
+  void registerAllocatedPointer(AllocaInst *AllocaI, PointerType *PtrTy) ;
   void registerArray(AllocaInst *AllocaI, ArrayType *ArrTy)  ;
-  void updatePointer(StoreInst *StoreI) ;
+  void registerPHINode(PHINode *PHI) ;
+  // update
+  void writeUpdateCodeAfter(Instruction* I, unsigned DstID) ;  
+  // void writeReallocCodeAfter(Instruction *I) ;
+  // check
   void checkDereference(Instruction &GEPInst) ;
   void checkSequentialWrite(Instruction &I) ;
   void writeCheckCodeAfter(GetElementPtrInst *GEP, uint64_t offset) ;
-  void writeCheckCodeBefore(Instruction *I, Value* FatPtr, Value* Ptr, uint64_t offset );
+  
   Value* getDeclaration(Value *V) ; 
+  void updateStoreToPointer(StoreInst *StoreI) ;
 
 
 }; // SoftboundPass end

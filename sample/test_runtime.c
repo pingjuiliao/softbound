@@ -19,9 +19,9 @@ main(int argc, char** argv) {
 void
 test_runtime(char* s) {
     int i = atoi(s) ;
-    int small[] = {1,2,3} ;
-    int medium[]= {1,2,3,4,5,6} ;
-    int large[] = {1,2,3,4,5,6,7,8,9,10,11} ;
+    int small[3] = {1,2,3} ;
+    int medium[6]= {1,2,3,4,5,6} ;
+    int large[11] = {1,2,3,4,5,6,7,8,9,10,11} ;
 
     int* buf ;
     switch(i % 3 ) {
@@ -35,12 +35,9 @@ test_runtime(char* s) {
             buf = large ; 
             break ;
     }
-
+    
+    // only large buffer is a valid store
     buf[8] = 1337 ;
-    puts("Printing out large buffer") ;
-    for ( int i = 0; i < 11; ++i ) { // this will be translated to llvm.memcpy...
-        printf("%d\n", large[i]) ; 
-    }
 
 }
 

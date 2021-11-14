@@ -12,7 +12,7 @@ a: a-dis ./lib/libSoftbound.so
 a-debug: a-dis
 	$(OPT) -passes=softbound -disable-output a.ll -debug-pass-manager
 a-dis: sample/a.c
-	$(CC) -m64 -O2 -S -emit-llvm -o ./a.ll sample/a.c
+	$(CC) -m64 -S -emit-llvm -o ./a.ll sample/a.c
 libSoftbound: 
 	clang++ -shared -o ./lib/libSoftbound.so ./lib/libSoftbound.cpp
 clean:

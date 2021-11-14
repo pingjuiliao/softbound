@@ -5,7 +5,7 @@ CXX=${OBJ_ROOT}/bin/clang++
 OPT=${OBJ_ROOT}/bin/opt
 LLC=${OBJ_ROOT}/bin/llc
 
-EMIT_LLVM_FLAG=-m64 -O2 -S -emit-llvm
+EMIT_LLVM_FLAG=-m64 -S -emit-llvm
 LIBSOFTBOUND=-L../lib -lSoftbound -Wl,-rpath,../lib 
 
 tests := test_arbitW.exe test_runtime.exe test_strncpy.exe
@@ -20,8 +20,8 @@ all: $(tests)
 %.bc: %.ll 
 	$(OPT) -passes=softbound -o $@ $<
 %.ll: %.c
-	$(CC) ${EMIT_LLVM_FLAG} -o $@ $<
+	$(CC) -O1 ${EMIT_LLVM_FLAG} -o $@ $<
 use-clang: test_forloop.c
 	$(CC) -O1 ${LIBSOFTBOUND} -o clang_forloop.exe $<
 clean: 
-	rm $(wildcard *.exe)
+	rm $(wildcard *.exe) $(wildcard *.ll) $(wildcard *.bc)
