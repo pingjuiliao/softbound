@@ -8,8 +8,8 @@ LLC=${OBJ_ROOT}/bin/llc
 EMIT_LLVM_FLAG=-m64 -S -emit-llvm
 LIBSOFTBOUND=-L../lib -lSoftbound -Wl,-rpath,../lib 
 
-tests := test_arbitW.exe test_runtime.exe test_strncpy.exe
-tests += test_forloop.exe
+tests := test_arbitW.exe test_runtime.exe test_strncpy.exe test_memset.exe
+tests += test_forloop.exe test_malloc.exe test_calloc.exe test_global.exe
 
 .PHONY: all use-clang
 

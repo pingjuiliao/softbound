@@ -14,6 +14,7 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 #define SOFTBOUND_REGISTER "_softbound_register"
 #define SOFTBOUND_UPDATE "_softbound_update"
@@ -35,13 +36,13 @@ private:
   void registerPointers(Function &F) ;
   void checkPointers(Function &F) ;
   
-  // helpers
-  
   // should return AllocaInst or GlobalVariable
   
   // register
   void registerAllocatedPointer(AllocaInst *AllocaI, PointerType *PtrTy) ;
   void registerArray(AllocaInst *AllocaI, ArrayType *ArrTy)  ;
+  void registerGlobalArray(GlobalVariable *GV, ArrayType *ArrTy)  ;
+  void registerHeapAlloc(Instruction *I) ;
   void registerPHINode(PHINode *PHI) ;
   // update
   void writeUpdateCodeAfter(Instruction* I, unsigned DstID) ;  
@@ -49,10 +50,11 @@ private:
   // check
   void checkDereference(Instruction &GEPInst) ;
   void checkSequentialWrite(Instruction &I) ;
-  void writeCheckCodeAfter(GetElementPtrInst *GEP, uint64_t offset) ;
+  void writeCheckCodeAfter2(GetElementPtrInst *GEP, uint64_t offset) ;
+  void writeCheckCodeAfter(GetElementPtrInst *GEP, Value* SizeVal) ;
   
   Value* getDeclaration(Value *V) ; 
-  void updateStoreToPointer(StoreInst *StoreI) ;
+  void updateStoreToPointer(StoreInst *StoreI) ; // unused (aggressive)
 
 
 }; // SoftboundPass end
