@@ -47,7 +47,7 @@ private:
   void registerHeapAlloc(Instruction *I) ;
   void registerAndUpdatePHINode(PHINode *PHI) ;
   // update
-  void updateOnArgs(CallInst*, Value*) ;
+  void updateOnArgs(CallInst*) ;
   void updateOnStore(StoreInst *StoreI) ; // unused (aggressive)
   void writeUpdateCodeAfter(Instruction* I, unsigned DstID) ;  
   // void writeReallocCodeAfter(Instruction *I) ;

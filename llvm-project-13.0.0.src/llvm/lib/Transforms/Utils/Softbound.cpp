@@ -77,6 +77,8 @@ void SoftboundPass::registerPointers(Module &M) {
     
     // 3)    
     for ( auto &F: M ) {
+        if ( !F.isStrongDefinitionForLinker() )
+            continue ;
         for ( auto &Arg: F.args() ) {
             if ( Arg.getType()->isPointerTy() ) {
                 registerArgPointer(&Arg, &F);
@@ -102,19 +104,54 @@ void SoftboundPass::registerPointers(Module &M) {
                 // 2) global variable
                 for ( auto &Val: I.operands() ) {
                     auto GV = dyn_cast<GlobalVariable>(&Val) ;
-                    if ( !GV ) 
+                    if ( GV ) { 
+                        errs() << "[GlobalVal] "<< *GV << "\n" ;
+                        Type* GVTy = GV->getValueType() ;
+                        if ( GVTy->isArrayTy() ) { 
+                            auto ArrTy = dyn_cast<ArrayType>(GVTy);
+                            errs() << "[GlobalValArr] "<< *GV << "\n" ;
+                            registerGlobalArray(GV, ArrTy, &F) ;
+                        } else if ( GVTy->isPointerTy() ) {
+                            auto PtrTy = dyn_cast<PointerType>(GVTy) ;
+                            registerGlobalPointer(GV, PtrTy, &F) ;
+                        }
+                          
+                    }
+                    auto ConstExpr = dyn_cast<ConstantExpr>(&Val) ;
+                    if ( !ConstExpr )
                         continue ;
-                    errs() << "[GlobalVal] "<< *GV << "\n" ;
-                    Type* GVTy = GV->getValueType() ;
-                    if ( GVTy->isArrayTy() ) { 
-                        auto ArrTy = dyn_cast<ArrayType>(GVTy);
-                        errs() << "[GlobalValArr] "<< *GV << "\n" ;
-                        registerGlobalArray(GV, ArrTy, &F) ;
-                    } else if ( GVTy->isPointerTy() ) {
-                        auto PtrTy = dyn_cast<PointerType>(GVTy) ;
-                        registerGlobalPointer(GV, PtrTy, &F) ;
-                    }     
-                } 
+                    for ( auto &CEVal: ConstExpr->operands() ) {
+                        auto CEGV = dyn_cast<GlobalVariable>(&CEVal) ;
+                        if ( !CEGV )
+                            continue ;
+                        errs() << "[GlobalVal] "<< *CEGV << "\n" ;
+                        Type* GVTy = CEGV->getValueType() ;
+                        if ( GVTy->isArrayTy() ) { 
+                            auto ArrTy = dyn_cast<ArrayType>(GVTy);
+                            errs() << "[GlobalValArr] "<< *CEGV << "\n" ;
+                            registerGlobalArray(CEGV, ArrTy, &F) ;
+                        } else if ( GVTy->isPointerTy() ) {
+                            auto PtrTy = dyn_cast<PointerType>(GVTy) ;
+                            registerGlobalPointer(CEGV, PtrTy, &F) ;    
+                        }
+                    }
+                }
+                /*
+                auto CallI = dyn_cast<CallInst>(&I);
+                if ( !CallI )
+                    continue ;
+                errs() << "[CallInst] " << *CallI << "\n" ;
+                for ( unsigned i = 0 ; i < CallI->getNumOperands(); ++i) {
+                    Value* op = CallI->getOperand(i) ;
+                    errs() << *op << "\n" ;
+                    auto gep = dyn_cast<ConstantExpr>(op) ;
+                    if ( !gep ) continue ;
+                    for ( unsigned j = 0 ; j < gep->getNumOperands(); ++j ) {
+                        errs() << "\t[EXPR OP] " << *gep->getOperand(j)  << "\n";
+                    }
+                }
+                errs() << "\n[GEP END] =======================\n";
+                */
             }
         }
     }
@@ -126,18 +163,17 @@ void SoftboundPass::registerPointers(Module &M) {
                 // PHINode also updates on its incoming values
                 if ( auto PHI = dyn_cast<PHINode>(&I) ) 
                     registerAndUpdatePHINode(PHI) ;
+                
                 if ( auto StoreI = dyn_cast<StoreInst>(&I) ) 
                     updateOnStore(StoreI);
-                /* this operation needs module pass
-                if ( auto CallI = dyn_cast<CallInst>(&I) ) {
-                    for ( auto &Arg: CallI->args() )
-                        updateOnArgs(CallI, &Arg) ;
-                }*/
+                
+                //  this operation needs module pass
+                if ( auto CallI = dyn_cast<CallInst>(&I) ) { 
+                    updateOnArgs(CallI) ;
+                }
             }
         }
     }
-
-    
 }
 
     
@@ -221,6 +257,7 @@ void SoftboundPass::registerGlobalArray(GlobalVariable* GV, ArrayType *ArrTy, Fu
     Function* RFP = M->getFunction(SOFTBOUND_REGISTER) ;
     
     IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrBase, PtrBound}) ;
+    errs() << *GV << " is registered \n" ;
 }
 
 
@@ -228,9 +265,6 @@ void SoftboundPass::registerGlobalArray(GlobalVariable* GV, ArrayType *ArrTy, Fu
 
 void SoftboundPass::registerAllocatedPointer(AllocaInst *AllocaI, PointerType *PtrTy) {
 
-    Module* M = AllocaI->getFunction()->getParent() ;
-    
-        
     // write code
     // IRBuilder<> IRB(AllocaI->getNextNode()) ;
     if ( PointerIDMap.find(AllocaI) == PointerIDMap.end() ) {
@@ -248,7 +282,6 @@ void SoftboundPass::registerAllocatedPointer(AllocaInst *AllocaI, PointerType *P
 
 void SoftboundPass::registerGlobalPointer(GlobalVariable *GV, 
         PointerType *PtrTy, Function *F) { 
-    Module* M = GV->getParent() ;
     
     // write code
     // IRBuilder<> IRB(F->getEntryBlock().getFirstNonPHI()) ;
@@ -430,29 +463,26 @@ void SoftboundPass::writeUpdateCodeAfter(Instruction *I,
     Module* M = I->getFunction()->getParent() ;
         
     if ( !isa<GetElementPtrInst>(I) && !isa<StoreInst>(I) ) {
-            
-        errs() << "Another Inst to overwrite pointers/arrays\n" ;
-        errs() << "writeUpdateCodeAfter: " << *I << "failed\n" ;
+        // errs() << "writeUpdateCodeAfter: " << *I << "failed\n" ;
         return ;
     }
 
     if ( !I->getNumOperands() ) {
-        errs() << *I << " has no operands on UPDATE\n" ;
+        // errs() << *I << " has no operands on UPDATE\n" ;
         return; 
     }
 
 
     Value* SrcPtr = getDeclaration(I->getOperand(0)) ; 
     if ( !SrcPtr ) {
-        errs() << "writeUpdateCodeAfter: " \
-               << "Cannot find source pointer for " << I->getOperand(0) 
-               << "\n" ;
+        /*errs() << "writeUpdateCodeAfter: " \
+               << "Cannot find source pointer for " << *I->getOperand(0) 
+               << "\n" ;*/
         return ; 
     }
 
     if ( PointerIDMap.find(SrcPtr) == PointerIDMap.end() ) {
-        errs() << "writeUpdateCodeAfter: "
-               << *SrcPtr << " is not registered \n" ;
+        // errs() << "writeUpdateCodeAfter: " << *SrcPtr << " is not registered \n" ;
         return ;
     }
 
@@ -461,12 +491,36 @@ void SoftboundPass::writeUpdateCodeAfter(Instruction *I,
     Value* DstPtrID = IRB.getInt32( DstID ) ;
     Function* UFP = M->getFunction( SOFTBOUND_UPDATE ) ;
     IRB.CreateCall(UFP->getFunctionType(), UFP, {DstPtrID, SrcPtrID}) ;
-    errs() << "[UPDATE Code] success : " << *I << "\n" ;
+    // errs() << "[UPDATE Code] success : " << *I << "\n" ;
 
 }
 
-void SoftboundPass::updateOnArgs(CallInst* CallI,  Value* arg) {
+void SoftboundPass::updateOnArgs(CallInst* CallI) {
 
+    Function* Callee = CallI->getCalledFunction() ; 
+    Module* M = Callee->getParent();
+    Function* UFP = M->getFunction( SOFTBOUND_UPDATE ) ;
+    unsigned NumOp = CallI->getNumOperands() ;
+    unsigned N = 0 ;
+    
+    for ( auto &Arg: Callee->args()  ) {
+        Value* Op = CallI->getOperand(N) ;
+        if ( N++ >= NumOp ) 
+            break ;
+        if ( PointerIDMap.find(&Arg) == PointerIDMap.end() ) {
+            continue ;
+        }
+        Value* SrcPtr = getDeclaration(Op) ;
+        if ( PointerIDMap.find(SrcPtr) == PointerIDMap.end() ) {
+            continue ;
+        }
+        
+        IRBuilder<> IRB(CallI) ;
+        ConstantInt* SrcPtrID= IRB.getInt32( PointerIDMap[ SrcPtr ] );
+        ConstantInt* DstPtrID= IRB.getInt32( PointerIDMap[ &Arg ] );
+        IRB.CreateCall(UFP->getFunctionType(), UFP, {DstPtrID, SrcPtrID}) ; 
+        errs() << "Success on instrumenting " << *CallI << " on " << N-1 << " args\n" ;
+    }
 }
 
 void SoftboundPass::checkDereference(Instruction &I) {
@@ -550,7 +604,8 @@ Value* SoftboundPass::getDeclaration(Value* V) {
 
         auto PtrU = dyn_cast<User>(Ptr) ;
         if ( !PtrU ) {
-            errs() << *Ptr << " is not a definition nor does it a User type\n" ;
+            // TODO: support function arguemnt
+            // errs() << *Ptr << " is not a definition nor does it a User type\n" ;
             return nullptr ;
         }
 
@@ -562,18 +617,17 @@ Value* SoftboundPass::getDeclaration(Value* V) {
         Value* NextV ;
         // TODO: some operation might not be Operand[0]
         NextV = PtrU->getOperand(0) ; // bitcast, GEP 
-        /* DEBUG 
-        errs() << "===GetDeclaration==================" \
+        
+        /*errs() << "===GetDeclaration==================" \
                << "\nUpdate: \n" << *Ptr << "  backtrack to  " \
-               << *NextV << "\n=======================\n";
-        */
+               << *NextV << "\n=======================\n";*/ 
         Ptr = NextV ; 
     }
     if ( !Ptr ) {
-        errs() << "[Error] getDeclaration cannot backtrace to nothing\n" ;
+        // errs() << "[Error] getDeclaration cannot backtrace to nothing\n" ;
         return nullptr ;
     }
-    errs() << "getDeclaration Success: " << *Ptr << " FOUND !\n"; 
+    // errs() << "getDeclaration Success: " << *Ptr << " FOUND !\n"; 
     return Ptr ;
 }
 
