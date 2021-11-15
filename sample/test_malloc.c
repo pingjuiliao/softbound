@@ -20,7 +20,7 @@ void
 test_malloc(char* s) {
     size_t i ;
     char* buf;
-    buf = malloc(20) ;
+    buf = malloc(10) ;
     for ( i = 0; s[i] != '\0' ; ++i ) {
         buf[i] = s[i] ;
     }

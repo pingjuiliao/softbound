@@ -19,7 +19,7 @@ main(int argc, char** argv) {
 void
 test_forloop(char* s) {
     size_t i ;
-    char buf[20];
+    char buf[10];
     for ( i = 0; s[i] != '\0' ; ++i ) {
         buf[i] = s[i] ;
     }

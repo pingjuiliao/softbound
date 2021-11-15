@@ -43,9 +43,11 @@ private:
   void registerGlobalArray(GlobalVariable*, ArrayType*, Function*)  ;
   void registerAllocatedPointer(AllocaInst*, PointerType*) ;
   void registerGlobalPointer(GlobalVariable *, PointerType *, Function*) ;
+  void registerArgPointer(Value*, Function*) ;
   void registerHeapAlloc(Instruction *I) ;
   void registerAndUpdatePHINode(PHINode *PHI) ;
   // update
+  void updateOnArgs(CallInst*, Value*) ;
   void updateOnStore(StoreInst *StoreI) ; // unused (aggressive)
   void writeUpdateCodeAfter(Instruction* I, unsigned DstID) ;  
   // void writeReallocCodeAfter(Instruction *I) ;

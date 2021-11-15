@@ -73,6 +73,13 @@ bool SoftboundPass::initializeLinkage(Module* M) {
 // **********************
 
 void SoftboundPass::registerPointers(Function &F) {
+    
+    // 3)    
+    for ( auto &Arg: F.args() ) {
+        if ( Arg.getType()->isPointerTy() ) {
+            registerArgPointer(&Arg, &F);
+        } 
+    }
 
     for ( auto &BB: F ) {
         for ( auto &I: BB ) {
@@ -90,8 +97,8 @@ void SoftboundPass::registerPointers(Function &F) {
             // 1-c) malloc, calloc, realloc
             registerHeapAlloc(&I) ;
             // 1-d) phinode
-            if ( auto PHI = dyn_cast<PHINode>(&I) ) 
-                registerAndUpdatePHINode(PHI) ;
+            // if ( auto PHI = dyn_cast<PHINode>(&I) ) 
+                // registerAndUpdatePHINode(PHI) ;
             // 2) global variable
             for ( auto &Val: I.operands() ) {
                 auto GV = dyn_cast<GlobalVariable>(&Val) ;
@@ -110,7 +117,9 @@ void SoftboundPass::registerPointers(Function &F) {
             } 
         }
     }
-    
+
+    // SOFTBOUND_UPDATE 
+
     for ( auto &BB: F ) {
         for ( auto &I: BB ) {
             // PHINode also updates on its incoming values
@@ -118,6 +127,11 @@ void SoftboundPass::registerPointers(Function &F) {
                 registerAndUpdatePHINode(PHI) ;
             if ( auto StoreI = dyn_cast<StoreInst>(&I) ) 
                 updateOnStore(StoreI);
+            /* this operation needs module pass
+            if ( auto CallI = dyn_cast<CallInst>(&I) ) {
+                for ( auto &Arg: CallI->args() )
+                    updateOnArgs(CallI, &Arg) ;
+            }*/
         }
     }
     //  3) function arguments TODO
@@ -229,7 +243,6 @@ void SoftboundPass::registerGlobalPointer(GlobalVariable *GV,
         PointerType *PtrTy, Function *F) { 
     Module* M = GV->getParent() ;
     
-
     // write code
     IRBuilder<> IRB(F->getEntryBlock().getFirstNonPHI()) ;
     if ( PointerIDMap.find(GV) == PointerIDMap.end() ) {
@@ -241,6 +254,25 @@ void SoftboundPass::registerGlobalPointer(GlobalVariable *GV,
     Function* RFP  = M->getFunction(SOFTBOUND_REGISTER) ;
     IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrNull, PtrNull});
     
+}
+
+void SoftboundPass::registerArgPointer(Value* Arg, Function* F) {
+    Module* M = F->getParent() ;
+    
+    // not checking argc, argv
+    if ( F->getName() == "main" ) {
+        return ;
+    }
+
+    IRBuilder<> IRB(F->getEntryBlock().getFirstNonPHI()) ;
+    if ( PointerIDMap.find( Arg ) == PointerIDMap.end() ) {
+        PointerIDMap[ Arg ] = AssignedID ;
+        AssignedID ++ ;
+    }
+    ConstantInt* PtrID = IRB.getInt32(PointerIDMap[ Arg ]) ;
+    Value* PtrNull = IRB.CreateIntToPtr(IRB.getInt64(0), IRB.getInt8PtrTy());
+    Function* RFP  = M->getFunction(SOFTBOUND_REGISTER) ;
+    IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrNull, PtrNull});
 }
 
 
@@ -431,7 +463,9 @@ void SoftboundPass::writeUpdateCodeAfter(Instruction *I,
 
 }
 
+void SoftboundPass::updateOnArgs(CallInst* CallI,  Value* arg) {
 
+}
 
 void SoftboundPass::checkDereference(Instruction &I) {
     // GEP: Get Element Pointer
