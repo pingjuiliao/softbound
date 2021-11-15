@@ -26,15 +26,15 @@ class SoftboundPass : public PassInfoMixin<SoftboundPass> {
 public:
   typedef unsigned PointerID;
   PointerID AssignedID ;
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
+  PreservedAnalyses run(Module&, ModuleAnalysisManager&);
   static bool isRequired() { return true;  } 
   SmallMapVector<Value*, PointerID, 0x100> PointerIDMap ;
 private:
 
   // the main body of this passes
   bool initializeLinkage(Module *M) ;
-  void registerPointers(Function &F) ;
-  void checkPointers(Function &F) ;
+  void registerPointers(Module &M) ;
+  void checkPointers(Module &M) ;
   
   // should return AllocaInst or GlobalVariable
   

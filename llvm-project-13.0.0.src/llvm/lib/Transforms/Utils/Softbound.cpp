@@ -10,14 +10,15 @@
 
 using namespace llvm;
 
-PreservedAnalyses SoftboundPass::run(Function &F, FunctionAnalysisManager &AM) {
+PreservedAnalyses SoftboundPass::run(Module &M, ModuleAnalysisManager &AM) {
 
     static bool HasInit = false ;
+
     if ( !HasInit ) {
-        HasInit = initializeLinkage(F.getParent()) ; 
+        HasInit = initializeLinkage(&M) ; 
     }
-    registerPointers(F) ;
-    checkPointers(F) ;
+    registerPointers(M) ;
+    checkPointers(M) ;
 
     return PreservedAnalyses::all();
 }
@@ -72,88 +73,90 @@ bool SoftboundPass::initializeLinkage(Module* M) {
 //  3) function arguments TODO
 // **********************
 
-void SoftboundPass::registerPointers(Function &F) {
+void SoftboundPass::registerPointers(Module &M) {
     
     // 3)    
-    for ( auto &Arg: F.args() ) {
-        if ( Arg.getType()->isPointerTy() ) {
-            registerArgPointer(&Arg, &F);
-        } 
-    }
-
-    for ( auto &BB: F ) {
-        for ( auto &I: BB ) {
-            //  1) local variables 
-            if ( auto AllocaI = dyn_cast<AllocaInst>(&I) ) {
-                Type* AllocatedTy = AllocaI->getAllocatedType() ;
-                if ( AllocatedTy->isArrayTy() )  {
-                    auto ArrTy = dyn_cast<ArrayType>(AllocatedTy) ;
-                    registerArray(AllocaI, ArrTy) ;
-                } else if ( AllocatedTy->isPointerTy() ) {
-                    auto PtrTy = dyn_cast<PointerType>(AllocatedTy) ;
-                    registerAllocatedPointer(AllocaI, PtrTy) ;
-                }
-            }
-            // 1-c) malloc, calloc, realloc
-            registerHeapAlloc(&I) ;
-            // 1-d) phinode
-            // if ( auto PHI = dyn_cast<PHINode>(&I) ) 
-                // registerAndUpdatePHINode(PHI) ;
-            // 2) global variable
-            for ( auto &Val: I.operands() ) {
-                auto GV = dyn_cast<GlobalVariable>(&Val) ;
-                if ( !GV ) 
-                    continue ;
-                errs() << "[GlobalVal] "<< *GV << "\n" ;
-                Type* GVTy = GV->getValueType() ;
-                if ( GVTy->isArrayTy() ) { 
-                    auto ArrTy = dyn_cast<ArrayType>(GVTy);
-                    errs() << "[GlobalValArr] "<< *GV << "\n" ;
-                    registerGlobalArray(GV, ArrTy, &F) ;
-                } else if ( GVTy->isPointerTy() ) {
-                    auto PtrTy = dyn_cast<PointerType>(GVTy) ;
-                    registerGlobalPointer(GV, PtrTy, &F) ;
-                }  
+    for ( auto &F: M ) {
+        for ( auto &Arg: F.args() ) {
+            if ( Arg.getType()->isPointerTy() ) {
+                registerArgPointer(&Arg, &F);
             } 
+        }
+    }
+    for ( auto &F: M ) {
+        for ( auto &BB: F ) {
+            for ( auto &I: BB ) {
+                //  1) local variables 
+                if ( auto AllocaI = dyn_cast<AllocaInst>(&I) ) {
+                    Type* AllocatedTy = AllocaI->getAllocatedType() ;
+                    if ( AllocatedTy->isArrayTy() )  {
+                        auto ArrTy = dyn_cast<ArrayType>(AllocatedTy) ;
+                        registerArray(AllocaI, ArrTy) ;
+                    } else if ( AllocatedTy->isPointerTy() ) {
+                        auto PtrTy = dyn_cast<PointerType>(AllocatedTy) ;
+                        registerAllocatedPointer(AllocaI, PtrTy) ;
+                    }
+                }
+                // 1-c) malloc, calloc, realloc
+                registerHeapAlloc(&I) ;
+                // 2) global variable
+                for ( auto &Val: I.operands() ) {
+                    auto GV = dyn_cast<GlobalVariable>(&Val) ;
+                    if ( !GV ) 
+                        continue ;
+                    errs() << "[GlobalVal] "<< *GV << "\n" ;
+                    Type* GVTy = GV->getValueType() ;
+                    if ( GVTy->isArrayTy() ) { 
+                        auto ArrTy = dyn_cast<ArrayType>(GVTy);
+                        errs() << "[GlobalValArr] "<< *GV << "\n" ;
+                        registerGlobalArray(GV, ArrTy, &F) ;
+                    } else if ( GVTy->isPointerTy() ) {
+                        auto PtrTy = dyn_cast<PointerType>(GVTy) ;
+                        registerGlobalPointer(GV, PtrTy, &F) ;
+                    }     
+                } 
+            }
         }
     }
 
     // SOFTBOUND_UPDATE 
-
-    for ( auto &BB: F ) {
-        for ( auto &I: BB ) {
-            // PHINode also updates on its incoming values
-            if ( auto PHI = dyn_cast<PHINode>(&I) ) 
-                registerAndUpdatePHINode(PHI) ;
-            if ( auto StoreI = dyn_cast<StoreInst>(&I) ) 
-                updateOnStore(StoreI);
-            /* this operation needs module pass
-            if ( auto CallI = dyn_cast<CallInst>(&I) ) {
-                for ( auto &Arg: CallI->args() )
-                    updateOnArgs(CallI, &Arg) ;
-            }*/
+    for ( auto &F: M ) {
+        for ( auto &BB: F ) {
+            for ( auto &I: BB ) {
+                // PHINode also updates on its incoming values
+                if ( auto PHI = dyn_cast<PHINode>(&I) ) 
+                    registerAndUpdatePHINode(PHI) ;
+                if ( auto StoreI = dyn_cast<StoreInst>(&I) ) 
+                    updateOnStore(StoreI);
+                /* this operation needs module pass
+                if ( auto CallI = dyn_cast<CallInst>(&I) ) {
+                    for ( auto &Arg: CallI->args() )
+                        updateOnArgs(CallI, &Arg) ;
+                }*/
+            }
         }
     }
-    //  3) function arguments TODO
+
     
 }
 
     
 
-void SoftboundPass::checkPointers(Function &F) {
+void SoftboundPass::checkPointers(Module &M) {
     // two style: 
     // 1) check each dereference
     // 2) check dereferences that use write operation
 
-    for ( auto &BB: F ) {
-        for ( auto &I: BB ) {
-            
-            // check dereferences
-            checkDereference(I) ;
+    for ( auto &F: M ) {
+        for ( auto &BB: F ) {
+            for ( auto &I: BB ) {
+                // check dereferences
+                checkDereference(I) ;
 
-            // check Sequential functions
-            checkSequentialWrite(I) ;
-        }
+                // check Sequential functions
+                checkSequentialWrite(I) ;
+            }
+        }    
     }
 }
 
@@ -229,13 +232,17 @@ void SoftboundPass::registerAllocatedPointer(AllocaInst *AllocaI, PointerType *P
     
         
     // write code
-    IRBuilder<> IRB(AllocaI->getNextNode()) ;
-    PointerIDMap[AllocaI] = AssignedID ;
-    AssignedID ++ ;
+    // IRBuilder<> IRB(AllocaI->getNextNode()) ;
+    if ( PointerIDMap.find(AllocaI) == PointerIDMap.end() ) {
+        PointerIDMap[AllocaI] = AssignedID ;
+        AssignedID ++ ;
+    }
+    /*
     ConstantInt *PtrID = IRB.getInt32( PointerIDMap[ AllocaI ] ) ;
     Value* PtrNull = IRB.CreateIntToPtr(IRB.getInt64(0), IRB.getInt8PtrTy()) ;
     Function* RFP = M->getFunction(SOFTBOUND_REGISTER) ;
     IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrNull, PtrNull}) ;
+    */
 }
 
 
@@ -244,35 +251,30 @@ void SoftboundPass::registerGlobalPointer(GlobalVariable *GV,
     Module* M = GV->getParent() ;
     
     // write code
-    IRBuilder<> IRB(F->getEntryBlock().getFirstNonPHI()) ;
+    // IRBuilder<> IRB(F->getEntryBlock().getFirstNonPHI()) ;
     if ( PointerIDMap.find(GV) == PointerIDMap.end() ) {
         PointerIDMap[ GV ] = AssignedID ;
         AssignedID ++ ;
     }
+    /*
     ConstantInt *PtrID = IRB.getInt32( PointerIDMap[ GV ] ) ;
     Value* PtrNull = IRB.CreateIntToPtr(IRB.getInt64(0), IRB.getInt8PtrTy());
     Function* RFP  = M->getFunction(SOFTBOUND_REGISTER) ;
     IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrNull, PtrNull});
-    
+    */
 }
 
 void SoftboundPass::registerArgPointer(Value* Arg, Function* F) {
-    Module* M = F->getParent() ;
     
     // not checking argc, argv
     if ( F->getName() == "main" ) {
         return ;
     }
 
-    IRBuilder<> IRB(F->getEntryBlock().getFirstNonPHI()) ;
     if ( PointerIDMap.find( Arg ) == PointerIDMap.end() ) {
         PointerIDMap[ Arg ] = AssignedID ;
         AssignedID ++ ;
     }
-    ConstantInt* PtrID = IRB.getInt32(PointerIDMap[ Arg ]) ;
-    Value* PtrNull = IRB.CreateIntToPtr(IRB.getInt64(0), IRB.getInt8PtrTy());
-    Function* RFP  = M->getFunction(SOFTBOUND_REGISTER) ;
-    IRB.CreateCall(RFP->getFunctionType(), RFP, {PtrID, PtrNull, PtrNull});
 }
 
 
