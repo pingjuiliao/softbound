@@ -14,6 +14,6 @@ a-debug: a-dis
 a-dis: sample/a.c
 	$(CC) -m64 -S -emit-llvm -o ./a.ll sample/a.c
 libSoftbound: 
-	clang++ -shared -o ./lib/libSoftbound.so ./lib/libSoftbound.cpp
+	clang++ -shared -fPIC -o ./lib/libSoftbound.so ./lib/libSoftbound.cpp
 clean:
 	rm *.bc *.ll *.exe 

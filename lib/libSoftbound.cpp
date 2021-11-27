@@ -1,33 +1,30 @@
 #include "libSoftbound.h" 
 
-void _softbound_register(unsigned ptr_id, uint8_t* base, uint8_t* bound) {
+
+void _softbound_register(u8* base, unsigned long long size) {
     // re-register is allowed
-    if ( base != NULL && bound != NULL  ) {
-        LookupTable[ptr_id].ptr_base  = base ;
-        LookupTable[ptr_id].ptr_bound = bound;
+    u8* bound = base + size ;
+    for ( u8* p = base ; p != bound ; ++p ) {
+        shadow[p].base = base ;
+        shadow[p].bound= base+size-1;
+        std::cout << static_cast<void*>(p) << " is registered with [" \
+                     << static_cast<void*>(base) << ", "  \
+                     << static_cast<void*>(bound) << ") ! \n" ;
     }
 }
 
-void _softbound_update(unsigned dst_ptr_id, unsigned src_ptr_id) {
-    LookupTable[dst_ptr_id].ptr_base  = LookupTable[src_ptr_id].ptr_base  ;
-    LookupTable[dst_ptr_id].ptr_bound = LookupTable[src_ptr_id].ptr_bound ;
-    puts("Updating pointer") ;
-}
-
-void _softbound_check(unsigned ptr_id, uint8_t* ptr) {
-    uint8_t* base = LookupTable[ptr_id].ptr_base ;
-    uint8_t* bound= LookupTable[ptr_id].ptr_bound;
-    if ( base <= ptr && ptr < bound ) {  
-        printf("[VALID] [%p, %p), and %p is inside\n", base, bound, ptr) ;
+void _softbound_check(u8* pAccess, u8* pBased) {
+    
+    if ( shadow[pBased].base <= pAccess && 
+            pAccess <= shadow[pBased].bound ) {
+        std::cout << "[ " << static_cast<void*>(shadow[pBased].base) \
+                  << ", " << static_cast<void*>(shadow[pBased].bound)\
+                  << " ] : " << static_cast<void*>(pAccess) << std::endl;
         return ;
     }
-    printf("[ABORT] [%p, %p), but ptr: %p\n", base, bound, ptr) ;
-    _softbound_abort() ;
-}
 
-
-
-void _softbound_abort(void) {
-    puts("pointer exceed base or bound") ;
+    std::cout << "[ " << static_cast<void*>(shadow[pBased].base) \
+              << ", " << static_cast<void*>(shadow[pBased].bound)\
+              << " ] : BUT " << static_cast<void*>(pAccess) << std::endl ;
     exit(-1) ;
 }

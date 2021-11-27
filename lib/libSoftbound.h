@@ -1,28 +1,34 @@
 #ifndef LIBSOFTBOUND_H
 #define LIBSOFTBOUND_H
+
+#ifdef __cplusplus
+    #include <iostream>
+    #include <cstdlib>
+    #include <map>
+#else 
+    #include <stdlib.h>
+#endif 
+
+typedef unsigned char u8;
+
+typedef struct {
+    u8* base ;
+    u8* bound;
+} FatPointer;
+
+#ifdef __cplusplus
+std::map<u8*, FatPointer> shadow;
+#endif
+
+
 #ifdef __cplusplus 
 extern "C" {
 #endif
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
+void _softbound_register(u8*, unsigned long long) ; 
+void _softbound_check(u8*, u8*) ;
+// void softbound_register(uint8_t*, uint64_t) ;
 
-const uint64_t NUM_PTR_MAX = 0x1000 ;
-
-typedef struct FatPointer {
-    uint64_t ptr ;
-    uint8_t* ptr_base ;
-    uint8_t* ptr_bound;
-} FatPointer;
-
-FatPointer LookupTable[NUM_PTR_MAX] ;
-
-
-void _softbound_register(unsigned ptr_id, uint8_t* base, uint8_t* bound) ; 
-void _softbound_check(unsigned ptr_id, uint8_t* ptr) ;
-void _softbound_update(unsigned dst_ptr_id, unsigned src_ptr_id) ;
-void _softbound_abort(void) ;
 
 
 #ifdef __cplusplus
