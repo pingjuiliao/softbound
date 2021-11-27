@@ -21,6 +21,11 @@ make        # in the REPO_ROOT
 ./a.exe
 ```
 
+## About this branch
+this branch statically analyze variables in IR level.
+
+
+
 ## to test if softbound can protect vulnerable codes 
 ./test-suite/a.c is a collection of tests.  
 I am just using that for checking whether the pass works or not  
