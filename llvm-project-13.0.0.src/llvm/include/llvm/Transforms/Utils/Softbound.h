@@ -43,7 +43,9 @@ private:
   
   // check
   void checkDereference(Instruction &GEPInst) ;
-  void checkSequentialWrite(Instruction &I) ;
+  void checkSizedSequentialOperation(Instruction &I) ;
+  // void checkStringBasedSequentialOperation(Instruction &I) ;
+  // void checkFormatStringSequentialOperation(Instruction &I) ;
   void writeCheckCodeAfter(GetElementPtrInst *GEP, Value* SizeVal) ;
   
 

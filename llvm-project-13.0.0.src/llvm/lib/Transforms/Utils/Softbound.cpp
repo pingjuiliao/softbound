@@ -121,7 +121,7 @@ void SoftboundPass::checkBaseBound(Module &M) {
                 checkDereference(I) ;
 
                 // check Sequential functions
-                checkSequentialWrite(I) ;
+                checkSizedSequentialOperation(I) ;
             }
         }    
     }
@@ -245,23 +245,22 @@ void SoftboundPass::checkDereference(Instruction &I) {
 
 
 // Place a check before { strcpy, strncpy, memcpy, memset } 
-void SoftboundPass::checkSequentialWrite(Instruction &I) {
+void SoftboundPass::checkSizedSequentialOperation(Instruction &I) {
     auto *CallI = dyn_cast<CallInst>(&I) ;
     if ( !CallI ) return ;
     // TODO (MAYBE): 
     // a constant list should be of much simple types.
     // ArrayRef<StringRef> => cannot use the forloop to capture
-    const SmallVector<StringRef> CheckFnList = \
-    {"strncpy",  "memcpy" , "memset", "memmove", "read", "write"};   \
-     //"fgets", "strcpy", "snprintf", "strcat", "strncat", "scanf"  \
-
+    const SmallVector<StringRef> DstSrcSizeFnList = \
+    {"strncpy",  "memcpy" , "memset", "memmove", "read", "write", 
+    "strncat", "fgets"};   \
 
     // TODO: make this simple 
     Function* Callee = CallI->getCalledFunction() ;
     StringRef FnName = Callee->getName() ;
     bool ShouldBeChecked = false ;
-    for ( auto Name: CheckFnList ) {
-        if ( FnName.contains(Name) ) {
+    for ( auto Name: DstSrcSizeFnList ) {
+        if ( FnName.compare(Name) == 0 ) {
             ShouldBeChecked = true ;
             break ;
         }
@@ -277,11 +276,13 @@ void SoftboundPass::checkSequentialWrite(Instruction &I) {
     // Size: if dst in map, check 
     if ( CallI->getNumOperands() < 3 ) return ;
 
-    errs() << "\nSOFTBOUND-Checking CallInst" << *CallI << "\n" ;
+    // errs() << "\nSOFTBOUND-Checking CallInst" << *CallI << "\n" ;
+    bool IsFGETS = FnName.compare("fgets") == 0 ;  
     // Dst 
     Value* DstPtr = CallI->getOperand(0) ; 
     // Size
-    Value* SizeValue = CallI->getOperand(2) ;
+    Value* SizeValue = FnName.compare("fgets")!=0? \
+                       CallI->getOperand(2) : CallI->getOperand(1);
 
     auto GEP = dyn_cast<GetElementPtrInst>(DstPtr);
     if ( !GEP ) 
