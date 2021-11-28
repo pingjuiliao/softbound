@@ -24,40 +24,28 @@ namespace llvm {
 
 class SoftboundPass : public PassInfoMixin<SoftboundPass> {
 public:
-  typedef unsigned PointerID;
-  PointerID AssignedID ;
   PreservedAnalyses run(Module&, ModuleAnalysisManager&);
   static bool isRequired() { return true;  } 
-  SmallMapVector<Value*, PointerID, 0x100> PointerIDMap ;
 private:
 
   // the main body of this passes
   bool initializeLinkage(Module *M) ;
-  void registerPointers(Module &M) ;
-  void checkPointers(Module &M) ;
+  void registerBaseBound(Module &M) ;
+  void checkBaseBound(Module &M) ;
   
   // should return AllocaInst or GlobalVariable
   
   // register
-  void registerArray(AllocaInst*, ArrayType*)  ;
-  void registerGlobalArray(GlobalVariable*, ArrayType*, Function*)  ;
-  void registerAllocatedPointer(AllocaInst*, PointerType*) ;
-  void registerGlobalPointer(GlobalVariable *, PointerType *, Function*) ;
-  void registerArgPointer(Value*, Function*) ;
-  void registerHeapAlloc(Instruction *I) ;
-  void registerAndUpdatePHINode(PHINode *PHI) ;
-  // update
-  void updateOnArgs(CallInst*) ;
-  void updateOnStore(StoreInst *StoreI) ; // unused (aggressive)
-  void writeUpdateCodeAfter(Instruction* I, unsigned DstID) ;  
-  // void writeReallocCodeAfter(Instruction *I) ;
+  void registerStackBuffer(AllocaInst*)  ;
+  void registerStackBuffer(GlobalVariable*, Function&);
+  void registerHeapBuffer(CallInst*) ;
+  // TODO: handle new operator
+  
   // check
   void checkDereference(Instruction &GEPInst) ;
   void checkSequentialWrite(Instruction &I) ;
-  void writeCheckCodeAfter2(GetElementPtrInst *GEP, uint64_t offset) ;
   void writeCheckCodeAfter(GetElementPtrInst *GEP, Value* SizeVal) ;
   
-  Value* getDeclaration(Value *V) ; 
 
 
 }; // SoftboundPass end
