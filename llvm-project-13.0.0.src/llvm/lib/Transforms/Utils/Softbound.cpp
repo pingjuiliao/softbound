@@ -64,6 +64,25 @@ bool SoftboundPass::initializeLinkage(Module* M) {
                 SOFTBOUND_CHECK, M);
     }
 
+    Function* CFP_OFFSET = M->getFunction(SOFTBOUND_CHECK_OFFSET) ;
+    if ( !CFP_OFFSET ) {
+        FunctionType *FnTy = FunctionType::get(Type::getVoidTy(Ctx), true) ;
+        CFP_OFFSET = Function::Create(FnTy, 
+                        GlobalValue::ExternalLinkage, 
+                        M->begin()->getAddressSpace(), 
+                        SOFTBOUND_CHECK_OFFSET, M) ;
+    }
+
+    Function* CFP_STRING = M->getFunction(SOFTBOUND_CHECK_STRING) ;
+    if ( !CFP_STRING ) {
+        FunctionType *FnTy = FunctionType::get(Type::getVoidTy(Ctx), true) ;
+        CFP_STRING = Function::Create(FnTy, 
+                        GlobalValue::ExternalLinkage, 
+                        M->begin()->getAddressSpace(), 
+                        SOFTBOUND_CHECK_STRING, M) ;
+    }
+
+
     return true ;
 }
 
@@ -122,6 +141,10 @@ void SoftboundPass::checkBaseBound(Module &M) {
 
                 // check Sequential functions
                 checkSizedSequentialOperation(I) ;
+                
+                // check String-based functions
+                checkStringBasedSequentialOperation(I) ;
+
             }
         }    
     }
@@ -243,31 +266,26 @@ void SoftboundPass::checkDereference(Instruction &I) {
 }
 
 
-
-// Place a check before { strcpy, strncpy, memcpy, memset } 
+// These function perform sized sequential load/store operations
 void SoftboundPass::checkSizedSequentialOperation(Instruction &I) {
     auto *CallI = dyn_cast<CallInst>(&I) ;
     if ( !CallI ) return ;
-    // TODO (MAYBE): 
+    
     // a constant list should be of much simple types.
-    // ArrayRef<StringRef> => cannot use the forloop to capture
-    const SmallVector<StringRef> DstSrcSizeFnList = \
-    {"strncpy",  "memcpy" , "memset", "memmove", "read", "write", 
-    "strncat", "fgets"};   \
+    std::map<StringRef, std::pair<unsigned, unsigned>> SizedFnMap = {
+        { "strncpy", {0, 2} }, {"snprintf", {0, 1}},
+        { "memcpy",  {0, 2} }, {"memmove",{0, 2}}, 
+        { "llvm.memcpy.p0i8.p0i8.i64", {0, 2} },
+        { "read",    {1, 2} }, {"write"  ,{1, 2}},
+        { "recv",    {1, 2} }, {"send"   ,{1, 2}}, 
+        { "recvfrom",{1, 2} }, {"sendto", {1, 2}},
+        { "fgets",   {0, 1} }, {"fread",  {0, 1}}
+    };
 
-    // TODO: make this simple 
     Function* Callee = CallI->getCalledFunction() ;
     StringRef FnName = Callee->getName() ;
-    bool ShouldBeChecked = false ;
-    for ( auto Name: DstSrcSizeFnList ) {
-        if ( FnName.compare(Name) == 0 ) {
-            ShouldBeChecked = true ;
-            break ;
-        }
-    }
-
-
-    if ( !ShouldBeChecked )
+    
+    if ( SizedFnMap.find(FnName) == SizedFnMap.end() ) 
         return ;
     
     // These function follows the Fn(dst, src, size) format
@@ -276,19 +294,91 @@ void SoftboundPass::checkSizedSequentialOperation(Instruction &I) {
     // Size: if dst in map, check 
     if ( CallI->getNumOperands() < 3 ) return ;
 
-    // errs() << "\nSOFTBOUND-Checking CallInst" << *CallI << "\n" ;
-    bool IsFGETS = FnName.compare("fgets") == 0 ;  
     // Dst 
-    Value* DstPtr = CallI->getOperand(0) ; 
+    unsigned DstOp = SizedFnMap[FnName].first ;
+    Value* DstPtr = CallI->getOperand(DstOp) ; 
     // Size
-    Value* SizeValue = FnName.compare("fgets")!=0? \
-                       CallI->getOperand(2) : CallI->getOperand(1);
+    unsigned SizeOp = SizedFnMap[FnName].second ;
+    Value* SizeValue = CallI->getOperand(SizeOp) ;
 
     auto GEP = dyn_cast<GetElementPtrInst>(DstPtr);
     if ( !GEP ) 
         return ;
            
-    writeCheckCodeAfter(GEP, SizeValue);
+    Value* BasedPtr= GEP->getPointerOperand();
+    // writeCheckCodeAfter(GEP, SizeValue);
+    Module *M = CallI->getFunction()->getParent() ;
+    Function* CFP_OFFSET = M->getFunction(SOFTBOUND_CHECK_OFFSET);
+
+    IRBuilder<> IRB(CallI) ;
+    IRB.CreateCall(CFP_OFFSET->getFunctionType(), CFP_OFFSET,
+             {GEP, SizeValue, BasedPtr}) ;
+
+    errs() << "SOFTBOUND-Checking CallInst " << FnName << "\n" ; 
+}
+
+void SoftboundPass::checkStringBasedSequentialOperation(Instruction &I) {
+
+    auto *CallI = dyn_cast<CallInst>(&I) ;
+    if ( !CallI ) return ;
+    
+    std::map<StringRef, SmallVector<unsigned, 4> > StringFnMap = {
+        { "strcpy",  {0, 1} },     // {"sprintf", {0, 1}},
+        { "strcat",  {0, 0, 1} },  
+        {"strncat",  {0, 0, 1, 2}} 
+    };
+    Function* Callee = CallI->getCalledFunction() ;
+    StringRef FnName = Callee->getName() ;
+    
+    if ( StringFnMap.find(FnName) == StringFnMap.end() ) 
+        return ;
+    
+    // These function follows the Fn(dst, src, size) format
+    // Dst : if it's in our FatPointer lookup table, check!
+    // Src : dont care
+    // Size: if dst in map, check 
+    if ( CallI->getNumOperands() < 2 ) 
+        return ;
+
+    
+    
+    // writeCheckCodeAfter(GEP, SizeValue);
+    Module *M = CallI->getFunction()->getParent() ;
+    Function* CFP_STRING = M->getFunction(SOFTBOUND_CHECK_STRING);
+
+    IRBuilder<> IRB(CallI) ;
+    // Dst 
+    unsigned DstOp = StringFnMap[FnName][0] ;
+    Value* DstPtr = CallI->getOperand(DstOp) ; 
+    // Str0
+    unsigned StrOp0 = StringFnMap[FnName][1] ;
+    Value* Str0 = CallI->getOperand(StrOp0) ;
+    // Str1
+    Value* Str1 ;
+    if (  StringFnMap[FnName].size() >= 3 ) {
+        unsigned StrOp1 = StringFnMap[FnName][2] ;
+        Str1 = CallI->getOperand(StrOp1);
+    } else {
+        Str1 = IRB.getInt64(0) ;
+    }
+    // bounded size: for strncat
+    Value* SizeValue ;
+    if ( StringFnMap[FnName].size() >= 4 ) {
+        SizeValue = CallI->getOperand(StringFnMap[FnName][3]);
+    } else {
+        SizeValue = IRB.getInt64(-1) ;
+    }
+
+    // 
+    auto GEP = dyn_cast<GetElementPtrInst>(DstPtr);
+    if ( !GEP ) 
+        return ;
+           
+    Value* BasedPtr= GEP->getPointerOperand();
+    IRB.CreateCall(CFP_STRING->getFunctionType(), CFP_STRING,
+             {GEP, Str0, Str1, SizeValue, BasedPtr}) ;
+
+    errs() << "SOFTBOUND-Checking CallInst " << FnName << "\n" ; 
 }
 
 void SoftboundPass::writeCheckCodeAfter(GetElementPtrInst* GEP, Value* SizeVal) {

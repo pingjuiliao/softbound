@@ -11,7 +11,7 @@ LIBSOFTBOUND=-L../lib -lSoftbound -Wl,-rpath,../lib
 tests := test_arbitW.exe test_runtime.exe test_strncpy.exe test_memset.exe
 tests += test_forloop.exe test_malloc.exe test_calloc.exe 
 tests += test_gruntime.exe test_gforloop.exe
-tests += test_countup.exe
+tests += test_countup.exe test_sizedfn.exe test_stringfn.exe
 
 .PHONY: all use-clang
 

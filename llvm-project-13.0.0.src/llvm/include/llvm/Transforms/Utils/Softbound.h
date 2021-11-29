@@ -17,9 +17,9 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 #define SOFTBOUND_REGISTER "_softbound_register"
-#define SOFTBOUND_UPDATE "_softbound_update"
 #define SOFTBOUND_CHECK  "_softbound_check"
-
+#define SOFTBOUND_CHECK_OFFSET  "_softbound_check_offset"
+#define SOFTBOUND_CHECK_STRING "_softbound_check_string"
 namespace llvm {
 
 class SoftboundPass : public PassInfoMixin<SoftboundPass> {
@@ -44,7 +44,7 @@ private:
   // check
   void checkDereference(Instruction &GEPInst) ;
   void checkSizedSequentialOperation(Instruction &I) ;
-  // void checkStringBasedSequentialOperation(Instruction &I) ;
+  void checkStringBasedSequentialOperation(Instruction &I) ;
   // void checkFormatStringSequentialOperation(Instruction &I) ;
   void writeCheckCodeAfter(GetElementPtrInst *GEP, Value* SizeVal) ;
   

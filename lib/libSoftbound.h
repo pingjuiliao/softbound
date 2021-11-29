@@ -4,8 +4,10 @@
 #ifdef __cplusplus
     #include <iostream>
     #include <cstdlib>
+    #include <cstring>
     #include <map>
 #else 
+    #include <string.h>
     #include <stdlib.h>
 #endif 
 
@@ -27,6 +29,8 @@ extern "C" {
 
 void _softbound_register(u8*, unsigned long long) ; 
 void _softbound_check(u8*, u8*) ;
+void _softbound_check_offset(u8*, size_t, u8*) ;
+void _softbound_check_string(u8*, char*, char*, int, u8*) ;
 // void softbound_register(uint8_t*, uint64_t) ;
 
 
